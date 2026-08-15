@@ -1,0 +1,2428 @@
+    <div
+      data-slot="sidebar-group-content"
+      data-sidebar="group-content"
+      className={cn('w-full text-sm', className)}
+      {...props}
+    />
+  );
+}
+
+function SidebarMenu({ className, ...props }: React.ComponentProps<'ul'>) {
+  return (
+    <ul
+      data-slot="sidebar-menu"
+      data-sidebar="menu"
+      className={cn('flex w-full min-w-0 flex-col gap-1', className)}
+      {...props}
+    />
+  );
+}
+
+function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
+  return (
+    <li
+      data-slot="sidebar-menu-item"
+      data-sidebar="menu-item"
+      className={cn('group/menu-item relative', className)}
+      {...props}
+    />
+  );
+}
+
+const sidebarMenuButtonVariants = cva(
+  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-hidden ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
+  {
+    variants: {
+      variant: {
+        default: 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+        outline:
+          'bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]',
+      },
+      size: {
+        default: 'h-8 text-sm',
+        sm: 'h-7 text-xs',
+        lg: 'h-12 text-sm group-data-[collapsible=icon]:p-0!',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+      size: 'default',
+    },
+  },
+);
+
+function SidebarMenuButton({
+  asChild = false,
+  isActive = false,
+  variant = 'default',
+  size = 'default',
+  tooltip,
+  className,
+  ...props
+}: React.ComponentProps<'button'> & {
+  asChild?: boolean;
+  isActive?: boolean;
+  tooltip?: string | React.ComponentProps<typeof TooltipContent>;
+} & VariantProps<typeof sidebarMenuButtonVariants>) {
+  const Comp = asChild ? Slot : 'button';
+  const { isMobile, state } = useSidebar();
+
+  const button = (
+    <Comp
+      data-slot="sidebar-menu-button"
+      data-sidebar="menu-button"
+      data-size={size}
+      data-active={isActive}
+      className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
+      {...props}
+    />
+  );
+
+  if (!tooltip) {
+    return button;
+  }
+
+  if (typeof tooltip === 'string') {
+    tooltip = {
+      children: tooltip,
+    };
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent
+        side="right"
+        align="center"
+        hidden={state !== 'collapsed' || isMobile}
+        {...tooltip}
+      />
+    </Tooltip>
+  );
+}
+
+function SidebarMenuAction({
+  className,
+  asChild = false,
+  showOnHover = false,
+  ...props
+}: React.ComponentProps<'button'> & {
+  asChild?: boolean;
+  showOnHover?: boolean;
+}) {
+  const Comp = asChild ? Slot : 'button';
+
+  return (
+    <Comp
+      data-slot="sidebar-menu-action"
+      data-sidebar="menu-action"
+      className={cn(
+        'text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground peer-hover/menu-button:text-sidebar-accent-foreground absolute top-1.5 right-1 flex aspect-square w-5 items-center justify-center rounded-md p-0 outline-hidden transition-transform focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0',
+        // Increases the hit area of the button on mobile.
+        'after:absolute after:-inset-2 md:after:hidden',
+        'peer-data-[size=sm]/menu-button:top-1',
+        'peer-data-[size=default]/menu-button:top-1.5',
+        'peer-data-[size=lg]/menu-button:top-2.5',
+        'group-data-[collapsible=icon]:hidden',
+        showOnHover &&
+          'peer-data-[active=true]/menu-button:text-sidebar-accent-foreground group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+function SidebarMenuBadge({
+  className,
+  ...props
+}: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="sidebar-menu-badge"
+      data-sidebar="menu-badge"
+      className={cn(
+        'text-sidebar-foreground pointer-events-none absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs font-medium tabular-nums select-none',
+        'peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[active=true]/menu-button:text-sidebar-accent-foreground',
+        'peer-data-[size=sm]/menu-button:top-1',
+        'peer-data-[size=default]/menu-button:top-1.5',
+        'peer-data-[size=lg]/menu-button:top-2.5',
+        'group-data-[collapsible=icon]:hidden',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+function SidebarMenuSkeleton({
+  className,
+  showIcon = false,
+  ...props
+}: React.ComponentProps<'div'> & {
+  showIcon?: boolean;
+}) {
+  // Fixed width for skeleton loading
+  const width = '70%';
+
+  return (
+    <div
+      data-slot="sidebar-menu-skeleton"
+      data-sidebar="menu-skeleton"
+      className={cn('flex h-8 items-center gap-2 rounded-md px-2', className)}
+      {...props}
+    >
+      {showIcon && (
+        <Skeleton
+          className="size-4 rounded-md"
+          data-sidebar="menu-skeleton-icon"
+        />
+      )}
+      <Skeleton
+        className="h-4 max-w-(--skeleton-width) flex-1"
+        data-sidebar="menu-skeleton-text"
+        style={
+          {
+            '--skeleton-width': width,
+          } as React.CSSProperties
+        }
+      />
+    </div>
+  );
+}
+
+function SidebarMenuSub({ className, ...props }: React.ComponentProps<'ul'>) {
+  return (
+    <ul
+      data-slot="sidebar-menu-sub"
+      data-sidebar="menu-sub"
+      className={cn(
+        'border-sidebar-border mx-3.5 flex min-w-0 translate-x-px flex-col gap-1 border-l px-2.5 py-0.5',
+        'group-data-[collapsible=icon]:hidden',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+function SidebarMenuSubItem({
+  className,
+  ...props
+}: React.ComponentProps<'li'>) {
+  return (
+    <li
+      data-slot="sidebar-menu-sub-item"
+      data-sidebar="menu-sub-item"
+      className={cn('group/menu-sub-item relative', className)}
+      {...props}
+    />
+  );
+}
+
+function SidebarMenuSubButton({
+  asChild = false,
+  size = 'md',
+  isActive = false,
+  className,
+  ...props
+}: React.ComponentProps<'a'> & {
+  asChild?: boolean;
+  size?: 'sm' | 'md';
+  isActive?: boolean;
+}) {
+  const Comp = asChild ? Slot : 'a';
+
+  return (
+    <Comp
+      data-slot="sidebar-menu-sub-button"
+      data-sidebar="menu-sub-button"
+      data-size={size}
+      data-active={isActive}
+      className={cn(
+        'text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground [&>svg]:text-sidebar-accent-foreground flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 outline-hidden focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
+        'data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground',
+        size === 'sm' && 'text-xs',
+        size === 'md' && 'text-sm',
+        'group-data-[collapsible=icon]:hidden',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupAction,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInput,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSkeleton,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+};
+
+
+=== FILE: src/components/ui/skeleton.tsx ===
+import { cn } from "@/lib/utils"
+
+function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="skeleton"
+      className={cn("bg-accent animate-pulse rounded-md", className)}
+      {...props}
+    />
+  )
+}
+
+export { Skeleton }
+
+
+=== FILE: src/components/ui/slider.tsx ===
+"use client"
+
+import * as React from "react"
+import * as SliderPrimitive from "@radix-ui/react-slider"
+
+import { cn } from "@/lib/utils"
+
+function Slider({
+  className,
+  defaultValue,
+  value,
+  min = 0,
+  max = 100,
+  ...props
+}: React.ComponentProps<typeof SliderPrimitive.Root>) {
+  const _values = React.useMemo(
+    () =>
+      Array.isArray(value)
+        ? value
+        : Array.isArray(defaultValue)
+          ? defaultValue
+          : [min, max],
+    [value, defaultValue, min, max]
+  )
+
+  return (
+    <SliderPrimitive.Root
+      data-slot="slider"
+      defaultValue={defaultValue}
+      value={value}
+      min={min}
+      max={max}
+      className={cn(
+        "relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col",
+        className
+      )}
+      {...props}
+    >
+      <SliderPrimitive.Track
+        data-slot="slider-track"
+        className={cn(
+          "bg-muted relative grow overflow-hidden rounded-full data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5"
+        )}
+      >
+        <SliderPrimitive.Range
+          data-slot="slider-range"
+          className={cn(
+            "bg-primary absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full"
+          )}
+        />
+      </SliderPrimitive.Track>
+      {Array.from({ length: _values.length }, (_, index) => (
+        <SliderPrimitive.Thumb
+          data-slot="slider-thumb"
+          key={index}
+          className="border-primary ring-ring/50 block size-4 shrink-0 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
+        />
+      ))}
+    </SliderPrimitive.Root>
+  )
+}
+
+export { Slider }
+
+
+=== FILE: src/components/ui/sonner.tsx ===
+"use client"
+
+import {
+  CircleCheckIcon,
+  InfoIcon,
+  Loader2Icon,
+  OctagonXIcon,
+  TriangleAlertIcon,
+} from "lucide-react"
+import { useTheme } from "next-themes"
+import { Toaster as Sonner, type ToasterProps } from "sonner"
+
+const Toaster = ({ ...props }: ToasterProps) => {
+  const { theme = "system" } = useTheme()
+
+  return (
+    <Sonner
+      theme={theme as ToasterProps["theme"]}
+      className="toaster group"
+      icons={{
+        success: <CircleCheckIcon className="size-4" />,
+        info: <InfoIcon className="size-4" />,
+        warning: <TriangleAlertIcon className="size-4" />,
+        error: <OctagonXIcon className="size-4" />,
+        loading: <Loader2Icon className="size-4 animate-spin" />,
+      }}
+      style={
+        {
+          "--normal-bg": "var(--popover)",
+          "--normal-text": "var(--popover-foreground)",
+          "--normal-border": "var(--border)",
+          "--border-radius": "var(--radius)",
+        } as React.CSSProperties
+      }
+      {...props}
+    />
+  )
+}
+
+export { Toaster }
+
+
+=== FILE: src/components/ui/spinner.tsx ===
+import { Loader2Icon } from "lucide-react"
+
+import { cn } from "@/lib/utils"
+
+function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
+  return (
+    <Loader2Icon
+      role="status"
+      aria-label="Loading"
+      className={cn("size-4 animate-spin", className)}
+      {...props}
+    />
+  )
+}
+
+export { Spinner }
+
+
+=== FILE: src/components/ui/switch.tsx ===
+"use client"
+
+import * as React from "react"
+import * as SwitchPrimitive from "@radix-ui/react-switch"
+
+import { cn } from "@/lib/utils"
+
+function Switch({
+  className,
+  ...props
+}: React.ComponentProps<typeof SwitchPrimitive.Root>) {
+  return (
+    <SwitchPrimitive.Root
+      data-slot="switch"
+      className={cn(
+        "peer data-[state=checked]:bg-primary data-[state=unchecked]:bg-input focus-visible:border-ring focus-visible:ring-ring/50 dark:data-[state=unchecked]:bg-input/80 inline-flex h-[1.15rem] w-8 shrink-0 items-center rounded-full border border-transparent shadow-xs transition-all outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      {...props}
+    >
+      <SwitchPrimitive.Thumb
+        data-slot="switch-thumb"
+        className={cn(
+          "bg-background dark:data-[state=unchecked]:bg-foreground dark:data-[state=checked]:bg-primary-foreground pointer-events-none block size-4 rounded-full ring-0 transition-transform data-[state=checked]:translate-x-[calc(100%-2px)] data-[state=unchecked]:translate-x-0"
+        )}
+      />
+    </SwitchPrimitive.Root>
+  )
+}
+
+export { Switch }
+
+
+=== FILE: src/components/ui/table.tsx ===
+"use client"
+
+import * as React from "react"
+
+import { cn } from "@/lib/utils"
+
+function Table({ className, ...props }: React.ComponentProps<"table">) {
+  return (
+    <div
+      data-slot="table-container"
+      className="relative w-full overflow-x-auto"
+    >
+      <table
+        data-slot="table"
+        className={cn("w-full caption-bottom text-sm", className)}
+        {...props}
+      />
+    </div>
+  )
+}
+
+function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
+  return (
+    <thead
+      data-slot="table-header"
+      className={cn("[&_tr]:border-b", className)}
+      {...props}
+    />
+  )
+}
+
+function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
+  return (
+    <tbody
+      data-slot="table-body"
+      className={cn("[&_tr:last-child]:border-0", className)}
+      {...props}
+    />
+  )
+}
+
+function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
+  return (
+    <tfoot
+      data-slot="table-footer"
+      className={cn(
+        "bg-muted/50 border-t font-medium [&>tr]:last:border-b-0",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
+  return (
+    <tr
+      data-slot="table-row"
+      className={cn(
+        "hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function TableHead({ className, ...props }: React.ComponentProps<"th">) {
+  return (
+    <th
+      data-slot="table-head"
+      className={cn(
+        "text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function TableCell({ className, ...props }: React.ComponentProps<"td">) {
+  return (
+    <td
+      data-slot="table-cell"
+      className={cn(
+        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function TableCaption({
+  className,
+  ...props
+}: React.ComponentProps<"caption">) {
+  return (
+    <caption
+      data-slot="table-caption"
+      className={cn("text-muted-foreground mt-4 text-sm", className)}
+      {...props}
+    />
+  )
+}
+
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+}
+
+
+=== FILE: src/components/ui/tabs.tsx ===
+"use client"
+
+import * as React from "react"
+import * as TabsPrimitive from "@radix-ui/react-tabs"
+
+import { cn } from "@/lib/utils"
+
+function Tabs({
+  className,
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.Root>) {
+  return (
+    <TabsPrimitive.Root
+      data-slot="tabs"
+      className={cn("flex flex-col gap-2", className)}
+      {...props}
+    />
+  )
+}
+
+function TabsList({
+  className,
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.List>) {
+  return (
+    <TabsPrimitive.List
+      data-slot="tabs-list"
+      className={cn(
+        "bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function TabsTrigger({
+  className,
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+  return (
+    <TabsPrimitive.Trigger
+      data-slot="tabs-trigger"
+      className={cn(
+        "data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function TabsContent({
+  className,
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.Content>) {
+  return (
+    <TabsPrimitive.Content
+      data-slot="tabs-content"
+      className={cn("flex-1 outline-none", className)}
+      {...props}
+    />
+  )
+}
+
+export { Tabs, TabsList, TabsTrigger, TabsContent }
+
+
+=== FILE: src/components/ui/textarea.tsx ===
+import * as React from "react"
+
+import { cn } from "@/lib/utils"
+
+function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
+  return (
+    <textarea
+      data-slot="textarea"
+      className={cn(
+        "border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 flex field-sizing-content min-h-16 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+export { Textarea }
+
+
+=== FILE: src/components/ui/toggle-group.tsx ===
+"use client"
+
+import * as React from "react"
+import * as ToggleGroupPrimitive from "@radix-ui/react-toggle-group"
+import { type VariantProps } from "class-variance-authority"
+
+import { cn } from "@/lib/utils"
+import { toggleVariants } from "@/components/ui/toggle"
+
+const ToggleGroupContext = React.createContext<
+  VariantProps<typeof toggleVariants> & {
+    spacing?: number
+  }
+>({
+  size: "default",
+  variant: "default",
+  spacing: 0,
+})
+
+function ToggleGroup({
+  className,
+  variant,
+  size,
+  spacing = 0,
+  children,
+  ...props
+}: React.ComponentProps<typeof ToggleGroupPrimitive.Root> &
+  VariantProps<typeof toggleVariants> & {
+    spacing?: number
+  }) {
+  return (
+    <ToggleGroupPrimitive.Root
+      data-slot="toggle-group"
+      data-variant={variant}
+      data-size={size}
+      data-spacing={spacing}
+      style={{ "--gap": spacing } as React.CSSProperties}
+      className={cn(
+        "group/toggle-group flex w-fit items-center gap-[--spacing(var(--gap))] rounded-md data-[spacing=default]:data-[variant=outline]:shadow-xs",
+        className
+      )}
+      {...props}
+    >
+      <ToggleGroupContext.Provider value={{ variant, size, spacing }}>
+        {children}
+      </ToggleGroupContext.Provider>
+    </ToggleGroupPrimitive.Root>
+  )
+}
+
+function ToggleGroupItem({
+  className,
+  children,
+  variant,
+  size,
+  ...props
+}: React.ComponentProps<typeof ToggleGroupPrimitive.Item> &
+  VariantProps<typeof toggleVariants>) {
+  const context = React.useContext(ToggleGroupContext)
+
+  return (
+    <ToggleGroupPrimitive.Item
+      data-slot="toggle-group-item"
+      data-variant={context.variant || variant}
+      data-size={context.size || size}
+      data-spacing={context.spacing}
+      className={cn(
+        toggleVariants({
+          variant: context.variant || variant,
+          size: context.size || size,
+        }),
+        "w-auto min-w-0 shrink-0 px-3 focus:z-10 focus-visible:z-10",
+        "data-[spacing=0]:rounded-none data-[spacing=0]:shadow-none data-[spacing=0]:first:rounded-l-md data-[spacing=0]:last:rounded-r-md data-[spacing=0]:data-[variant=outline]:border-l-0 data-[spacing=0]:data-[variant=outline]:first:border-l",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </ToggleGroupPrimitive.Item>
+  )
+}
+
+export { ToggleGroup, ToggleGroupItem }
+
+
+=== FILE: src/components/ui/toggle.tsx ===
+"use client"
+
+import * as React from "react"
+import * as TogglePrimitive from "@radix-ui/react-toggle"
+import { cva, type VariantProps } from "class-variance-authority"
+
+import { cn } from "@/lib/utils"
+
+const toggleVariants = cva(
+  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium hover:bg-muted hover:text-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none transition-[color,box-shadow] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive whitespace-nowrap",
+  {
+    variants: {
+      variant: {
+        default: "bg-transparent",
+        outline:
+          "border border-input bg-transparent shadow-xs hover:bg-accent hover:text-accent-foreground",
+      },
+      size: {
+        default: "h-9 px-2 min-w-9",
+        sm: "h-8 px-1.5 min-w-8",
+        lg: "h-10 px-2.5 min-w-10",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+)
+
+function Toggle({
+  className,
+  variant,
+  size,
+  ...props
+}: React.ComponentProps<typeof TogglePrimitive.Root> &
+  VariantProps<typeof toggleVariants>) {
+  return (
+    <TogglePrimitive.Root
+      data-slot="toggle"
+      className={cn(toggleVariants({ variant, size, className }))}
+      {...props}
+    />
+  )
+}
+
+export { Toggle, toggleVariants }
+
+
+=== FILE: src/components/ui/tooltip.tsx ===
+"use client"
+
+import * as React from "react"
+import * as TooltipPrimitive from "@radix-ui/react-tooltip"
+
+import { cn } from "@/lib/utils"
+
+function TooltipProvider({
+  delayDuration = 0,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
+  return (
+    <TooltipPrimitive.Provider
+      data-slot="tooltip-provider"
+      delayDuration={delayDuration}
+      {...props}
+    />
+  )
+}
+
+function Tooltip({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  return (
+    <TooltipProvider>
+      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+    </TooltipProvider>
+  )
+}
+
+function TooltipTrigger({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+}
+
+function TooltipContent({
+  className,
+  sideOffset = 0,
+  children,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+  return (
+    <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Content
+        data-slot="tooltip-content"
+        sideOffset={sideOffset}
+        className={cn(
+          "bg-foreground text-background animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 w-fit origin-(--radix-tooltip-content-transform-origin) rounded-md px-3 py-1.5 text-xs text-balance",
+          className
+        )}
+        {...props}
+      >
+        {children}
+        <TooltipPrimitive.Arrow className="bg-foreground fill-foreground z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px]" />
+      </TooltipPrimitive.Content>
+    </TooltipPrimitive.Portal>
+  )
+}
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+
+
+=== FILE: src/contexts/RoleContext.tsx ===
+'use client';
+
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+// 角色类型
+export type RoleType = 'supervisor' | 'teacher';
+
+// 角色配置
+export const roleConfig = {
+  supervisor: {
+    label: '教研主管',
+    description: '拥有完整的知识体系管理权限',
+  },
+  teacher: {
+    label: '教研员',
+    description: '可编辑知识点详情，但不能修改知识树结构',
+  },
+};
+
+// Context 类型
+interface RoleContextType {
+  currentRole: RoleType;
+  setRole: (role: RoleType) => void;
+  isSupervisor: boolean;
+  isTeacher: boolean;
+  roleLabel: string;
+}
+
+// 创建 Context
+const RoleContext = createContext<RoleContextType | undefined>(undefined);
+
+// Provider Props
+interface RoleProviderProps {
+  children: React.ReactNode;
+}
+
+// Provider 组件
+export function RoleProvider({ children }: RoleProviderProps) {
+  const [currentRole, setCurrentRole] = useState<RoleType>('supervisor');
+  const router = useRouter();
+
+  // 切换角色
+  const setRole = useCallback((role: RoleType) => {
+    setCurrentRole(role);
+    // 切换角色后跳转到知识树体系管理页面
+    router.push('/knowledge-system');
+  }, [router]);
+
+  // 计算属性
+  const isSupervisor = currentRole === 'supervisor';
+  const isTeacher = currentRole === 'teacher';
+  const roleLabel = roleConfig[currentRole].label;
+
+  return (
+    <RoleContext.Provider
+      value={{
+        currentRole,
+        setRole,
+        isSupervisor,
+        isTeacher,
+        roleLabel,
+      }}
+    >
+      {children}
+    </RoleContext.Provider>
+  );
+}
+
+// Hook
+export function useRole() {
+  const context = useContext(RoleContext);
+  if (context === undefined) {
+    throw new Error('useRole must be used within a RoleProvider');
+  }
+  return context;
+}
+
+// HOC: 用于包装需要权限检查的组件
+export function withRoleCheck<P extends object>(
+  WrappedComponent: React.ComponentType<P>,
+  allowedRoles: RoleType[]
+) {
+  return function RoleCheckedComponent(props: P) {
+    const { currentRole } = useRole();
+    
+    if (!allowedRoles.includes(currentRole)) {
+      return null;
+    }
+    
+    return <WrappedComponent {...props} />;
+  };
+}
+
+
+=== FILE: src/hooks/use-mobile.ts ===
+import * as React from "react"
+
+const MOBILE_BREAKPOINT = 768
+
+export function useIsMobile() {
+  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
+
+  React.useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+    const onChange = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    }
+    mql.addEventListener("change", onChange)
+    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    return () => mql.removeEventListener("change", onChange)
+  }, [])
+
+  return !!isMobile
+}
+
+
+=== FILE: src/hooks/useTextbookData.ts ===
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import {
+  Textbook,
+  TextbookChapter,
+  ChangeRecord,
+  PublishRecord,
+  TextbookSchool,
+  getTextbooks,
+  getTextbook,
+  createTextbook,
+  updateTextbook,
+  deleteTextbook,
+  getChapters,
+  createChapter,
+  updateChapters,
+  deleteChapter,
+  getChangeRecords,
+  addChangeRecord,
+  getPublishRecords,
+  publishVersion,
+  getSchools,
+  addSchools,
+  removeSchool,
+} from '@/services/textbook-api';
+
+// ==================== 类型定义 ====================
+
+interface UseTextbookDataReturn {
+  // 状态
+  textbooks: Textbook[];
+  selectedTextbook: Textbook | null;
+  chapters: TextbookChapter[];
+  changeRecords: ChangeRecord[];
+  publishRecords: PublishRecord[];
+  schools: TextbookSchool[];
+  loading: boolean;
+  error: string | null;
+
+  // 教材操作
+  loadTextbooks: (filters?: { subject?: string; phase?: string; grade?: string }) => Promise<void>;
+  selectTextbook: (id: string) => Promise<void>;
+  createNewTextbook: (data: Partial<Textbook>) => Promise<Textbook>;
+  updateSelectedTextbook: (data: Partial<Textbook>) => Promise<void>;
+  deleteSelectedTextbook: () => Promise<void>;
+
+  // 章节操作
+  loadChapters: () => Promise<void>;
+  saveChapters: (chapters: Partial<TextbookChapter>[]) => Promise<void>;
+  addChapter: (data: Partial<TextbookChapter>) => Promise<TextbookChapter>;
+  removeChapter: (chapterId: string) => Promise<void>;
+
+  // 变更记录操作
+  loadChangeRecords: (unpublishedOnly?: boolean) => Promise<void>;
+  addChange: (data: {
+    change_type: 'add' | 'modify' | 'delete';
+    change_description: string;
+    dimension?: string;
+    target?: string;
+  }) => Promise<void>;
+
+  // 发布操作
+  loadPublishRecords: () => Promise<void>;
+  publish: (data: {
+    version: string;
+    description: string;
+    publisher?: string;
+    publisher_account?: string;
+    scheduled_date?: string;
+    scheduled_time?: string;
+  }) => Promise<void>;
+
+  // 学校操作
+  loadSchools: () => Promise<void>;
+  addSchoolsToTextbook: (schools: { id: string; name: string }[]) => Promise<void>;
+  removeSchoolFromTextbook: (schoolId: string) => Promise<void>;
+
+  // 工具
+  clearSelection: () => void;
+  setError: (error: string | null) => void;
+}
+
+// ==================== Hook ====================
+
+export function useTextbookData(
+  userRole: 'supervisor' | 'teacher',
+  userName: string = '当前用户'
+): UseTextbookDataReturn {
+  // 状态
+  const [textbooks, setTextbooks] = useState<Textbook[]>([]);
+  const [selectedTextbook, setSelectedTextbook] = useState<Textbook | null>(null);
+  const [chapters, setChapters] = useState<TextbookChapter[]>([]);
+  const [changeRecords, setChangeRecords] = useState<ChangeRecord[]>([]);
+  const [publishRecords, setPublishRecords] = useState<PublishRecord[]>([]);
+  const [schools, setSchools] = useState<TextbookSchool[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // 加载教材列表
+  const loadTextbooks = useCallback(async (filters?: {
+    subject?: string;
+    phase?: string;
+    grade?: string;
+  }) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getTextbooks(filters);
+      setTextbooks(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载教材列表失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 选择教材并加载详情
+  const selectTextbook = useCallback(async (id: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const textbook = await getTextbook(id);
+      setSelectedTextbook(textbook);
+
+      // 同时加载章节数据
+      const chaptersData = await getChapters(id);
+      setChapters(chaptersData);
+
+      // 加载变更记录
+      const changes = await getChangeRecords(id);
+      setChangeRecords(changes);
+
+      // 加载发布记录
+      const publishes = await getPublishRecords(id);
+      setPublishRecords(publishes);
+
+      // 加载学校
+      const schoolsData = await getSchools(id);
+      setSchools(schoolsData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载教材详情失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 创建新教材
+  const createNewTextbook = useCallback(async (data: Partial<Textbook>): Promise<Textbook> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const newTextbook = await createTextbook(data);
+      setTextbooks(prev => [newTextbook, ...prev]);
+      return newTextbook;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '创建教材失败');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 更新选中的教材
+  const updateSelectedTextbook = useCallback(async (data: Partial<Textbook>) => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const updated = await updateTextbook(selectedTextbook.id, data);
+      setSelectedTextbook(updated);
+      setTextbooks(prev =>
+        prev.map(t => (t.id === updated.id ? updated : t))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '更新教材失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 删除选中的教材
+  const deleteSelectedTextbook = useCallback(async () => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await deleteTextbook(selectedTextbook.id);
+      setTextbooks(prev => prev.filter(t => t.id !== selectedTextbook.id));
+      setSelectedTextbook(null);
+      setChapters([]);
+      setChangeRecords([]);
+      setPublishRecords([]);
+      setSchools([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除教材失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 加载章节
+  const loadChapters = useCallback(async () => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getChapters(selectedTextbook.id);
+      setChapters(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载章节失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 保存章节（批量更新）
+  const saveChapters = useCallback(async (updatedChapters: Partial<TextbookChapter>[]) => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await updateChapters(selectedTextbook.id, updatedChapters);
+      setChapters(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存章节失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 添加章节
+  const addChapter = useCallback(async (data: Partial<TextbookChapter>): Promise<TextbookChapter> => {
+    if (!selectedTextbook) throw new Error('No textbook selected');
+    setLoading(true);
+    setError(null);
+    try {
+      const newChapter = await createChapter(selectedTextbook.id, data);
+      setChapters(prev => [...prev, newChapter]);
+      return newChapter;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '添加章节失败');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 删除章节
+  const removeChapter = useCallback(async (chapterId: string) => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await deleteChapter(selectedTextbook.id, chapterId);
+      setChapters(prev => prev.filter(c => c.id !== chapterId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除章节失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 加载变更记录
+  const loadChangeRecords = useCallback(async (unpublishedOnly?: boolean) => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getChangeRecords(selectedTextbook.id, unpublishedOnly);
+      setChangeRecords(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载变更记录失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 添加变更记录
+  const addChange = useCallback(async (data: {
+    change_type: 'add' | 'modify' | 'delete';
+    change_description: string;
+    dimension?: string;
+    target?: string;
+  }) => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const newChange = await addChangeRecord(selectedTextbook.id, {
+        ...data,
+        changed_by: userName,
+        changed_by_role: userRole,
+      });
+      setChangeRecords(prev => [newChange, ...prev]);
+      
+      // 更新教材的待发布状态
+      setSelectedTextbook(prev =>
+        prev ? { ...prev, has_unpublished_changes: true } : null
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '添加变更记录失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook, userName, userRole]);
+
+  // 加载发布记录
+  const loadPublishRecords = useCallback(async () => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getPublishRecords(selectedTextbook.id);
+      setPublishRecords(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载发布记录失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 发布新版本
+  const publish = useCallback(async (data: {
+    version: string;
+    description: string;
+    publisher?: string;
+    publisher_account?: string;
+    scheduled_date?: string;
+    scheduled_time?: string;
+  }) => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const newPublish = await publishVersion(selectedTextbook.id, {
+        ...data,
+        publisher: userName,
+      });
+      setPublishRecords(prev => [newPublish, ...prev]);
+      
+      // 更新教材状态
+      setSelectedTextbook(prev =>
+        prev
+          ? {
+              ...prev,
+              has_unpublished_changes: false,
+              current_version: data.version,
+              last_publish_time: newPublish.publish_time,
+              last_publisher: userName,
+            }
+          : null
+      );
+      
+      // 标记变更记录为已发布
+      setChangeRecords(prev =>
+        prev.map(c => ({ ...c, is_published: true }))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '发布失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook, userName]);
+
+  // 加载学校
+  const loadSchools = useCallback(async () => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getSchools(selectedTextbook.id);
+      setSchools(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载学校失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 添加学校
+  const addSchoolsToTextbook = useCallback(async (newSchools: { id: string; name: string }[]) => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await addSchools(selectedTextbook.id, newSchools);
+      setSchools(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '添加学校失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 删除学校
+  const removeSchoolFromTextbook = useCallback(async (schoolId: string) => {
+    if (!selectedTextbook) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await removeSchool(selectedTextbook.id, schoolId);
+      setSchools(prev => prev.filter(s => s.school_id !== schoolId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除学校失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTextbook]);
+
+  // 清除选择
+  const clearSelection = useCallback(() => {
+    setSelectedTextbook(null);
+    setChapters([]);
+    setChangeRecords([]);
+    setPublishRecords([]);
+    setSchools([]);
+  }, []);
+
+  // 初始加载教材列表
+  useEffect(() => {
+    loadTextbooks();
+  }, [loadTextbooks]);
+
+  return {
+    textbooks,
+    selectedTextbook,
+    chapters,
+    changeRecords,
+    publishRecords,
+    schools,
+    loading,
+    error,
+
+    loadTextbooks,
+    selectTextbook,
+    createNewTextbook,
+    updateSelectedTextbook,
+    deleteSelectedTextbook,
+
+    loadChapters,
+    saveChapters,
+    addChapter,
+    removeChapter,
+
+    loadChangeRecords,
+    addChange,
+
+    loadPublishRecords,
+    publish,
+
+    loadSchools,
+    addSchoolsToTextbook,
+    removeSchoolFromTextbook,
+
+    clearSelection,
+    setError,
+  };
+}
+
+
+=== FILE: src/lib/utils.ts ===
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+
+=== FILE: src/services/textbook-api.ts ===
+// 教材体系 API 服务层
+
+// ==================== 类型定义 ====================
+
+export interface Textbook {
+  id: string;
+  name: string;
+  subject: string;
+  phase: string;
+  grade: string;
+  publisher: string;
+  version: string;
+  year: string;
+  region: string;
+  cover_image?: string;
+  current_version?: string;
+  last_publish_time?: string;
+  last_publisher?: string;
+  chapter_count: number;
+  knowledge_point_count: number;
+  school_count: number;
+  has_unpublished_changes: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface TextbookChapter {
+  id: string;
+  textbook_id: string;
+  parent_id?: string;
+  name: string;
+  level: 'chapter' | 'section';
+  order: number;
+  expanded: boolean;
+  knowledge_points?: KnowledgePoint[];
+  sync_courses?: SyncCourse[];
+  practice_exams?: PracticeExam[];
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface KnowledgePoint {
+  id: string;
+  name: string;
+  extendedPoints?: { id: string; name: string }[];
+}
+
+export interface SyncCourse {
+  id: string;
+  name: string;
+  teacher: string;
+  students: number;
+}
+
+export interface PracticeExam {
+  id: string;
+  name: string;
+  questions: number;
+  difficulty: string;
+}
+
+export interface ChangeRecord {
+  id: string;
+  textbook_id: string;
+  change_type: 'add' | 'modify' | 'delete';
+  change_description: string;
+  changed_by: string;
+  changed_by_role: 'supervisor' | 'teacher';
+  dimension?: string;
+  target?: string;
+  is_published: boolean;
+  created_at: string;
+}
+
+export interface PublishRecord {
+  id: string;
+  textbook_id: string;
+  version: string;
+  description: string;
+  publish_time: string;
+  publisher: string;
+  publisher_account?: string;
+  scheduled_date?: string;
+  scheduled_time?: string;
+  changes?: ChangeRecord[];
+  created_at: string;
+}
+
+export interface TextbookSchool {
+  id: string;
+  textbook_id: string;
+  school_id: string;
+  school_name: string;
+  created_at: string;
+}
+
+// ==================== API 函数 ====================
+
+const API_BASE = '/api/textbooks';
+
+// 获取教材列表
+export async function getTextbooks(filters?: {
+  subject?: string;
+  phase?: string;
+  grade?: string;
+}): Promise<Textbook[]> {
+  const params = new URLSearchParams();
+  if (filters?.subject) params.append('subject', filters.subject);
+  if (filters?.phase) params.append('phase', filters.phase);
+  if (filters?.grade) params.append('grade', filters.grade);
+
+  const url = `${API_BASE}${params.toString() ? `?${params.toString()}` : ''}`;
+  const response = await fetch(url);
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to fetch textbooks');
+  }
+
+  return result.data || [];
+}
+
+// 获取教材详情
+export async function getTextbook(id: string): Promise<Textbook> {
+  const response = await fetch(`${API_BASE}/${id}`);
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to fetch textbook');
+  }
+
+  return result.data;
+}
+
+// 创建教材
+export async function createTextbook(data: Partial<Textbook>): Promise<Textbook> {
+  const response = await fetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to create textbook');
+  }
+
+  return result.data;
+}
+
+// 更新教材
+export async function updateTextbook(id: string, data: Partial<Textbook>): Promise<Textbook> {
+  const response = await fetch(`${API_BASE}/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to update textbook');
+  }
+
+  return result.data;
+}
+
+// 删除教材
+export async function deleteTextbook(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/${id}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.error || 'Failed to delete textbook');
+  }
+}
+
+// 获取章节列表
+export async function getChapters(textbookId: string): Promise<TextbookChapter[]> {
+  const response = await fetch(`${API_BASE}/${textbookId}/chapters`);
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to fetch chapters');
+  }
+
+  return result.data || [];
+}
+
+// 创建章节
+export async function createChapter(
+  textbookId: string,
+  data: Partial<TextbookChapter>
+): Promise<TextbookChapter> {
+  const response = await fetch(`${API_BASE}/${textbookId}/chapters`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to create chapter');
+  }
+
+  return result.data;
+}
+
+// 批量更新章节
+export async function updateChapters(
+  textbookId: string,
+  chapters: Partial<TextbookChapter>[]
+): Promise<TextbookChapter[]> {
+  const response = await fetch(`${API_BASE}/${textbookId}/chapters`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chapters }),
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to update chapters');
+  }
+
+  return result.data;
+}
+
+// 删除章节
+export async function deleteChapter(textbookId: string, chapterId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/${textbookId}/chapters?chapterId=${chapterId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.error || 'Failed to delete chapter');
+  }
+}
+
+// 获取变更记录
+export async function getChangeRecords(
+  textbookId: string,
+  unpublishedOnly?: boolean
+): Promise<ChangeRecord[]> {
+  const url = `${API_BASE}/${textbookId}/changes${unpublishedOnly ? '?unpublished=true' : ''}`;
+  const response = await fetch(url);
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to fetch change records');
+  }
+
+  return result.data || [];
+}
+
+// 添加变更记录
+export async function addChangeRecord(
+  textbookId: string,
+  data: {
+    change_type: 'add' | 'modify' | 'delete';
+    change_description: string;
+    changed_by?: string;
+    changed_by_role?: 'supervisor' | 'teacher';
+    dimension?: string;
+    target?: string;
+  }
+): Promise<ChangeRecord> {
+  const response = await fetch(`${API_BASE}/${textbookId}/changes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to add change record');
+  }
+
+  return result.data;
+}
+
+// 标记变更为已发布
+export async function markChangesAsPublished(textbookId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/${textbookId}/changes`, {
+    method: 'PUT',
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.error || 'Failed to mark changes as published');
+  }
+}
+
+// 获取发布记录
+export async function getPublishRecords(textbookId: string): Promise<PublishRecord[]> {
+  const response = await fetch(`${API_BASE}/${textbookId}/publish`);
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to fetch publish records');
+  }
+
+  return result.data || [];
+}
+
+// 发布新版本
+export async function publishVersion(
+  textbookId: string,
+  data: {
+    version: string;
+    description: string;
+    publisher?: string;
+    publisher_account?: string;
+    scheduled_date?: string;
+    scheduled_time?: string;
+  }
+): Promise<PublishRecord> {
+  const response = await fetch(`${API_BASE}/${textbookId}/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to publish version');
+  }
+
+  return result.data;
+}
+
+// 获取使用学校
+export async function getSchools(textbookId: string): Promise<TextbookSchool[]> {
+  const response = await fetch(`${API_BASE}/${textbookId}/schools`);
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to fetch schools');
+  }
+
+  return result.data || [];
+}
+
+// 添加学校
+export async function addSchools(
+  textbookId: string,
+  schools: { id: string; name: string }[]
+): Promise<TextbookSchool[]> {
+  const response = await fetch(`${API_BASE}/${textbookId}/schools`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ schools }),
+  });
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to add schools');
+  }
+
+  return result.data;
+}
+
+// 删除学校
+export async function removeSchool(textbookId: string, schoolId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/${textbookId}/schools?schoolId=${schoolId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.error || 'Failed to remove school');
+  }
+}
+
+
+=== FILE: src/storage/database/shared/relations.ts ===
+import { relations } from "drizzle-orm/relations";
+import {  } from "./schema";
+
+
+
+=== FILE: src/storage/database/shared/schema.ts ===
+import { sql } from "drizzle-orm";
+import {
+  pgTable,
+  text,
+  varchar,
+  timestamp,
+  boolean,
+  integer,
+  jsonb,
+  index,
+} from "drizzle-orm/pg-core";
+
+// ==================== 教材体系相关表 ====================
+
+// 教材表
+export const textbooks = pgTable(
+  "textbooks",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    name: varchar("name", { length: 255 }).notNull(),
+    subject: varchar("subject", { length: 50 }).notNull(),
+    phase: varchar("phase", { length: 50 }).notNull(), // 学段：高中/初中/小学
+    grade: varchar("grade", { length: 50 }).notNull(),
+    publisher: varchar("publisher", { length: 100 }).notNull(), // 出版社/版本
+    version: varchar("version", { length: 50 }).notNull(), // 年份版本
+    year: varchar("year", { length: 20 }).notNull(),
+    region: varchar("region", { length: 50 }).notNull(),
+    coverImage: varchar("cover_image", { length: 500 }),
+    // 发布相关
+    currentVersion: varchar("current_version", { length: 20 }),
+    lastPublishTime: timestamp("last_publish_time", { withTimezone: true }),
+    lastPublisher: varchar("last_publisher", { length: 100 }),
+    // 统计数据
+    chapterCount: integer("chapter_count").default(0).notNull(),
+    knowledgePointCount: integer("knowledge_point_count").default(0).notNull(),
+    schoolCount: integer("school_count").default(0).notNull(),
+    // 状态
+    hasUnpublishedChanges: boolean("has_unpublished_changes").default(false).notNull(),
+    // 时间戳
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("textbooks_subject_idx").on(table.subject),
+    index("textbooks_phase_idx").on(table.phase),
+    index("textbooks_grade_idx").on(table.grade),
+  ]
+);
+
+// 教材章节表
+export const textbookChapters = pgTable(
+  "textbook_chapters",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    textbookId: varchar("textbook_id", { length: 36 }).notNull(),
+    parentId: varchar("parent_id", { length: 36 }), // 父章节ID，用于层级结构
+    name: varchar("name", { length: 255 }).notNull(),
+    level: varchar("level", { length: 20 }).notNull(), // chapter/section
+    order: integer("order").default(0).notNull(),
+    expanded: boolean("expanded").default(false).notNull(),
+    // 知识点关联（存储为JSON数组）
+    knowledgePoints: jsonb("knowledge_points"),
+    // 同步课程
+    syncCourses: jsonb("sync_courses"),
+    // 练习试卷
+    practiceExams: jsonb("practice_exams"),
+    // 时间戳
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("textbook_chapters_textbook_idx").on(table.textbookId),
+    index("textbook_chapters_parent_idx").on(table.parentId),
+  ]
+);
+
+// 变更记录表
+export const textbookChangeRecords = pgTable(
+  "textbook_change_records",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    textbookId: varchar("textbook_id", { length: 36 }).notNull(),
+    changeType: varchar("change_type", { length: 50 }).notNull(), // add/modify/delete
+    changeDescription: text("change_description").notNull(),
+    changedBy: varchar("changed_by", { length: 100 }).notNull(), // 修改人
+    changedByRole: varchar("changed_by_role", { length: 20 }).notNull(), // supervisor/teacher
+    dimension: varchar("dimension", { length: 50 }), // 变更维度：章节信息/知识点关联/同步课程/练习试卷
+    target: varchar("target", { length: 255 }), // 变更对象
+    isPublished: boolean("is_published").default(false).notNull(), // 是否已发布
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("textbook_change_records_textbook_idx").on(table.textbookId),
+    index("textbook_change_records_published_idx").on(table.isPublished),
+  ]
+);
+
+// 发布记录表
+export const textbookPublishRecords = pgTable(
+  "textbook_publish_records",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    textbookId: varchar("textbook_id", { length: 36 }).notNull(),
+    version: varchar("version", { length: 20 }).notNull(),
+    description: text("description").notNull(),
+    publishTime: timestamp("publish_time", { withTimezone: true }).notNull(),
+    publisher: varchar("publisher", { length: 100 }).notNull(),
+    publisherAccount: varchar("publisher_account", { length: 50 }),
+    // 定时发布信息
+    scheduledDate: varchar("scheduled_date", { length: 20 }),
+    scheduledTime: varchar("scheduled_time", { length: 10 }),
+    // 变更详情
+    changes: jsonb("changes"), // 关联的变更记录
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("textbook_publish_records_textbook_idx").on(table.textbookId),
+    index("textbook_publish_records_version_idx").on(table.version),
+  ]
+);
+
+// 使用学校表
+export const textbookSchools = pgTable(
+  "textbook_schools",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    textbookId: varchar("textbook_id", { length: 36 }).notNull(),
+    schoolId: varchar("school_id", { length: 36 }).notNull(),
+    schoolName: varchar("school_name", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("textbook_schools_textbook_idx").on(table.textbookId),
+  ]
+);
+
+// ==================== 知识树体系相关表 ====================
+
+// 学科表
+export const subjects = pgTable(
+  "subjects",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    name: varchar("name", { length: 100 }).notNull().unique(),
+    code: varchar("code", { length: 50 }),
+    order: integer("order").default(0).notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    hasUnpublishedChanges: boolean("has_unpublished_changes").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("subjects_name_idx").on(table.name),
+  ]
+);
+
+// 知识树节点表
+export const knowledgeNodes = pgTable(
+  "knowledge_nodes",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    subjectId: varchar("subject_id", { length: 36 }).notNull(),
+    parentId: varchar("parent_id", { length: 36 }),
+    name: varchar("name", { length: 255 }).notNull(),
+    level: integer("level").default(0).notNull(), // 层级
+    order: integer("order").default(0).notNull(),
+    expanded: boolean("expanded").default(false).notNull(),
+    // 知识点详情
+    description: text("description"),
+    difficulty: varchar("difficulty", { length: 20 }), // 难度等级
+    // 关联信息
+    textbooks: jsonb("textbooks"), // 关联的教材
+    exams: jsonb("exams"), // 关联的试卷
+    // 时间戳
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("knowledge_nodes_subject_idx").on(table.subjectId),
+    index("knowledge_nodes_parent_idx").on(table.parentId),
+  ]
+);
+
+// 知识树变更记录表
+export const knowledgeChangeRecords = pgTable(
+  "knowledge_change_records",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    subjectId: varchar("subject_id", { length: 36 }).notNull(),
+    nodeId: varchar("node_id", { length: 36 }),
+    changeType: varchar("change_type", { length: 50 }).notNull(),
+    changeDescription: text("change_description").notNull(),
+    changedBy: varchar("changed_by", { length: 100 }).notNull(),
+    changedByRole: varchar("changed_by_role", { length: 20 }).notNull(),
+    isPublished: boolean("is_published").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("knowledge_change_records_subject_idx").on(table.subjectId),
+  ]
+);
+
+// 知识树发布记录表
+export const knowledgePublishRecords = pgTable(
+  "knowledge_publish_records",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    subjectId: varchar("subject_id", { length: 36 }).notNull(),
+    version: varchar("version", { length: 20 }).notNull(),
+    description: text("description").notNull(),
+    publishTime: timestamp("publish_time", { withTimezone: true }).notNull(),
+    publisher: varchar("publisher", { length: 100 }).notNull(),
+    publisherAccount: varchar("publisher_account", { length: 50 }),
+    changes: jsonb("changes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("knowledge_publish_records_subject_idx").on(table.subjectId),
+  ]
+);
+
+// ==================== 系统健康检查表（保留） ====================
+
+export const healthCheck = pgTable("health_check", {
+	id: integer("id").primaryKey().default(1),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+});
+
+// ==================== TypeScript 类型导出 ====================
+
+export type Textbook = typeof textbooks.$inferSelect;
+export type TextbookChapter = typeof textbookChapters.$inferSelect;
+export type TextbookChangeRecord = typeof textbookChangeRecords.$inferSelect;
+export type TextbookPublishRecord = typeof textbookPublishRecords.$inferSelect;
+export type TextbookSchool = typeof textbookSchools.$inferSelect;
+
+export type Subject = typeof subjects.$inferSelect;
+export type KnowledgeNode = typeof knowledgeNodes.$inferSelect;
+export type KnowledgeChangeRecord = typeof knowledgeChangeRecords.$inferSelect;
+export type KnowledgePublishRecord = typeof knowledgePublishRecords.$inferSelect;
+
+
+=== FILE: src/storage/database/supabase-client.ts ===
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { execSync } from 'child_process';
+
+let envLoaded = false;
+
+interface SupabaseCredentials {
+  url: string;
+  anonKey: string;
+}
+
+function loadEnv(): void {
+  if (envLoaded || (process.env.COZE_SUPABASE_URL && process.env.COZE_SUPABASE_ANON_KEY)) {
+    return;
+  }
+
+  try {
+    try {
+      require('dotenv').config();
+      if (process.env.COZE_SUPABASE_URL && process.env.COZE_SUPABASE_ANON_KEY) {
+        envLoaded = true;
+        return;
+      }
+    } catch {
+      // dotenv not available
+    }
+
+    const pythonCode = `
+import os
+import sys
+try:
+    from coze_workload_identity import Client
+    client = Client()
+    env_vars = client.get_project_env_vars()
+    client.close()
+    for env_var in env_vars:
+        print(f"{env_var.key}={env_var.value}")
+except Exception as e:
+    print(f"# Error: {e}", file=sys.stderr)
+`;
+
+    const output = execSync(`python3 -c '${pythonCode.replace(/'/g, "'\"'\"'")}'`, {
+      encoding: 'utf-8',
+      timeout: 10000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    const lines = output.trim().split('\n');
+    for (const line of lines) {
+      if (line.startsWith('#')) continue;
+      const eqIndex = line.indexOf('=');
+      if (eqIndex > 0) {
+        const key = line.substring(0, eqIndex);
+        let value = line.substring(eqIndex + 1);
+        if ((value.startsWith("'") && value.endsWith("'")) ||
+            (value.startsWith('"') && value.endsWith('"'))) {
+          value = value.slice(1, -1);
+        }
+        if (!process.env[key]) {
+          process.env[key] = value;
+        }
+      }
+    }
+
+    envLoaded = true;
+  } catch {
+    // Silently fail
+  }
+}
+
+function getSupabaseCredentials(): SupabaseCredentials {
+  loadEnv();
+
+  const url = process.env.COZE_SUPABASE_URL;
+  const anonKey = process.env.COZE_SUPABASE_ANON_KEY;
+
+  if (!url) {
+    throw new Error('COZE_SUPABASE_URL is not set');
+  }
+  if (!anonKey) {
+    throw new Error('COZE_SUPABASE_ANON_KEY is not set');
+  }
+
+  return { url, anonKey };
+}
+
+function getSupabaseClient(token?: string): SupabaseClient {
+  const { url, anonKey } = getSupabaseCredentials();
+
+  if (token) {
+    return createClient(url, anonKey, {
+      global: {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+      db: {
+        timeout: 60000,
+      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+  }
+
+  return createClient(url, anonKey, {
+    db: {
+      timeout: 60000,
+    },
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+export { loadEnv, getSupabaseCredentials, getSupabaseClient };
+
+
+=== FILE: package.json ===
+{
+  "name": "projects",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "bash ./scripts/build.sh",
+    "dev": "bash ./scripts/dev.sh",
+    "preinstall": "npx only-allow pnpm",
+    "lint": "eslint",
+    "start": "bash ./scripts/start.sh",
+    "ts-check": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.958.0",
+    "@aws-sdk/lib-storage": "^3.958.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@hookform/resolvers": "^5.2.2",
+    "@radix-ui/react-accordion": "^1.2.12",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
+    "@radix-ui/react-aspect-ratio": "^1.1.8",
+    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/react-checkbox": "^1.3.3",
+    "@radix-ui/react-collapsible": "^1.1.12",
+    "@radix-ui/react-context-menu": "^2.2.16",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-hover-card": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-menubar": "^1.1.16",
+    "@radix-ui/react-navigation-menu": "^1.2.14",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-progress": "^1.1.8",
+    "@radix-ui/react-radio-group": "^1.3.8",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slider": "^1.3.6",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-toggle": "^1.1.10",
+    "@radix-ui/react-toggle-group": "^1.1.11",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@supabase/supabase-js": "2.95.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "coze-coding-dev-sdk": "^0.7.16",
+    "date-fns": "^4.1.0",
+    "dotenv": "^17.2.3",
+    "drizzle-kit": "^0.31.8",
+    "drizzle-orm": "^0.45.1",
+    "drizzle-zod": "^0.8.3",
+    "embla-carousel-react": "^8.6.0",
+    "input-otp": "^1.4.2",
+    "lucide-react": "^0.468.0",
+    "next": "16.1.1",
+    "next-themes": "^0.4.6",
+    "pg": "^8.16.3",
+    "react": "19.2.3",
+    "react-day-picker": "^9.13.0",
+    "react-dom": "19.2.3",
+    "react-hook-form": "^7.70.0",
+    "react-resizable-panels": "^4.2.0",
+    "recharts": "2.15.4",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^2.6.0",
+    "tw-animate-css": "^1.4.0",
+    "vaul": "^1.1.2",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@react-dev-inspector/babel-plugin": "^2.0.1",
+    "@react-dev-inspector/middleware": "^2.0.1",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "^8.16.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.1",
+    "only-allow": "^1.2.2",
+    "react-dev-inspector": "^2.0.1",
+    "shadcn": "latest",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "pnpm": ">=9.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": "^0.25.12"
+    }
+  }
+}
+
+=== FILE: tsconfig.json ===
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
+}
+
+=== FILE: next.config.ts ===
+import type { NextConfig } from 'next';
+import path from 'path';
+
+const nextConfig: NextConfig = {
+  // outputFileTracingRoot: path.resolve(__dirname, '../../'),
+  /* config options here */
+  allowedDevOrigins: ['*.dev.coze.site'],
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'lf-coze-web-cdn.coze.cn',
+        pathname: '/**',
+      },
+    ],
+  },
+};
+
+export default nextConfig;
+
+=== FILE: postcss.config.mjs ===
+const config = {
+  plugins: {
+    '@tailwindcss/postcss': {},
+  },
+};
+
+export default config;
+
+=== FILE: components.json ===
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/app/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "iconLibrary": "lucide"
+}
+

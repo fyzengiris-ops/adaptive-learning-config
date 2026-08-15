@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新增学科弹窗 - 通用知识树</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #c1c1c1;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #a1a1a1;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  
+  <!-- 页面背景 - 模拟通用知识树首页 -->
+  <div class="p-6">
+    <!-- 顶部面包屑 -->
+    <div class="flex items-center gap-2 text-sm text-gray-500 mb-4">
+      <span>知识体系管理</span>
+      <span>/</span>
+      <span class="text-gray-900">通用知识树</span>
+    </div>
+    
+    <!-- 页面标题区 -->
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-semibold text-gray-900">通用知识树</h1>
+      <button class="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        查看历史发布记录
+      </button>
+    </div>
+    
+    <!-- 学段Tab -->
+    <div class="flex items-center gap-1 p-1 bg-gray-100 rounded-lg w-fit mb-6">
+      <button class="px-4 py-2 text-sm font-medium bg-white text-gray-900 rounded-md shadow-sm">高中</button>
+      <button class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-md">初中</button>
+      <button class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-md">小学</button>
+    </div>
+    
+    <!-- 学科统计区 -->
+    <div class="flex items-center justify-between mb-6">
+      <span class="text-sm text-gray-600">共 5 个学科</span>
+      <button id="openModalBtn" class="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+        </svg>
+        新增学科
+      </button>
+    </div>
+    
+    <!-- 学科卡片列表（模糊背景） -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 opacity-30">
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+              </svg>
+            </div>
+            <div>
+              <h3 class="font-medium text-gray-900">数学</h3>
+              <p class="text-xs text-gray-500">高中 · v1.0.0</p>
+            </div>
+          </div>
+          <span class="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full">已发布</span>
+        </div>
+        <div class="flex items-center justify-between text-sm text-gray-500">
+          <span>367 个知识点</span>
+          <span>更新于 2024-02-23</span>
+        </div>
+      </div>
+      
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div class="h-20"></div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div class="h-20"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 遮罩层 + 弹窗 -->
+  <div id="modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl w-[500px] max-h-[90vh] overflow-hidden">
+      <!-- 弹窗标题 -->
+      <div class="p-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="font-semibold text-gray-900">
+          新增学科 - 高中
+        </h3>
+        <button id="closeModalBtn" class="text-gray-400 hover:text-gray-600 transition-colors text-xl">
+          ✕
+        </button>
+      </div>
+      
+      <!-- 弹窗内容 -->
+      <div class="p-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            学科名称 <span class="text-red-500">*</span>
+          </label>
+          
+          <!-- 下拉选择器 -->
+          <div class="relative">
+            <button id="dropdownBtn" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer flex items-center justify-between bg-white text-gray-400">
+              <span id="selectedText">请选择学科</span>
+              <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </button>
+            
+            <!-- 下拉列表 -->
+            <div id="dropdownList" class="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto custom-scrollbar">
+              <!-- 数学 - 已存在 -->
+              <div class="px-3 py-2 flex items-center gap-2 bg-gray-100 cursor-not-allowed" title="该学科已存在">
+                <span class="flex-1 text-gray-400">数学</span>
+                <span class="text-xs text-gray-400">已存在</span>
+              </div>
+              
+              <!-- 英语 - 已存在 -->
+              <div class="px-3 py-2 flex items-center gap-2 bg-gray-100 cursor-not-allowed" title="该学科已存在">
+                <span class="flex-1 text-gray-400">英语</span>
+                <span class="text-xs text-gray-400">已存在</span>
+              </div>
+              
+              <!-- 物理 - 已存在 -->
+              <div class="px-3 py-2 flex items-center gap-2 bg-gray-100 cursor-not-allowed" title="该学科已存在">
+                <span class="flex-1 text-gray-400">物理</span>
+                <span class="text-xs text-gray-400">已存在</span>
+              </div>
+              
+              <!-- 化学 - 已存在 -->
+              <div class="px-3 py-2 flex items-center gap-2 bg-gray-100 cursor-not-allowed" title="该学科已存在">
+                <span class="flex-1 text-gray-400">化学</span>
+                <span class="text-xs text-gray-400">已存在</span>
+              </div>
+              
+              <!-- 生物 - 已存在 -->
+              <div class="px-3 py-2 flex items-center gap-2 bg-gray-100 cursor-not-allowed" title="该学科已存在">
+                <span class="flex-1 text-gray-400">生物</span>
+                <span class="text-xs text-gray-400">已存在</span>
+              </div>
+              
+              <!-- 科学 - 可选 -->
+              <div class="px-3 py-2 flex items-center gap-2 hover:bg-gray-50 cursor-pointer" onclick="selectSubject('science', '科学')">
+                <span class="flex-1 text-gray-900">科学</span>
+              </div>
+            </div>
+          </div>
+          
+          <p class="text-xs text-gray-400 mt-1">从预定义的学科列表中选择</p>
+        </div>
+      </div>
+      
+      <!-- 弹窗底部 -->
+      <div class="p-4 border-t border-gray-200 flex justify-end gap-2">
+        <button onclick="closeModal()" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+          取消
+        </button>
+        <button class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+          确定
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    function closeModal() {
+      document.getElementById('modal').style.display = 'none';
+    }
+    
+    document.getElementById('openModalBtn').addEventListener('click', function() {
+      document.getElementById('modal').style.display = 'flex';
+    });
+    
+    document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+    
+    document.getElementById('modal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeModal();
+      }
+    });
+    
+    const dropdownBtn = document.getElementById('dropdownBtn');
+    const dropdownList = document.getElementById('dropdownList');
+    
+    dropdownBtn.addEventListener('click', function() {
+      dropdownList.style.display = dropdownList.style.display === 'none' ? 'block' : 'none';
+    });
+    
+    document.addEventListener('click', function(e) {
+      if (!dropdownBtn.contains(e.target) && !dropdownList.contains(e.target)) {
+        dropdownList.style.display = 'none';
+      }
+    });
+    
+    function selectSubject(id, name) {
+      document.getElementById('selectedText').textContent = name;
+      document.getElementById('selectedText').classList.remove('text-gray-400');
+      document.getElementById('selectedText').classList.add('text-gray-900');
+      dropdownList.style.display = 'none';
+    }
+    
+    dropdownList.style.display = 'block';
+  </script>
+</body>
+</html>

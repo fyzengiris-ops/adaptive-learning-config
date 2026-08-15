@@ -1,0 +1,5000 @@
+=== FILE: src/app/adaptive-strategy/page.tsx ===
+'use client';
+
+import PageLayout from '@/components/shared/PageLayout';
+import StrategyPlaza from '../system-settings/StrategyPlaza';
+
+export default function AdaptiveStrategyPage() {
+  return (
+    <PageLayout
+      activeMenuId="adaptive-strategy"
+      breadcrumbs={[
+        { label: '自适应学习策略' },
+        { label: '策略广场', isLast: true },
+      ]}
+    >
+      <StrategyPlaza />
+    </PageLayout>
+  );
+}
+
+
+=== FILE: src/app/adaptive-strategy/strategy/diagnosis/[id]/page.tsx ===
+'use client';
+
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  ArrowLeft,
+  Save,
+  Plus,
+  Trash2,
+  Check,
+  AlertCircle,
+  Edit3,
+} from 'lucide-react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import PageLayout from '@/components/shared/PageLayout';
+
+// 场景类型
+type SceneType = 'sync' | 'exam' | 'vacation' | 'zhongkao' | 'gaokao';
+
+// 场景名称映射
+const sceneNames: Record<SceneType, string> = {
+  sync: '同步学',
+  exam: '期中期末考',
+  vacation: '寒暑假',
+  zhongkao: '中考',
+  gaokao: '高考',
+};
+
+// 模拟策略数据（用于编辑时回显）
+const mockStrategyData: Record<string, {
+  name: string;
+  scene: SceneType;
+  phase: string;
+  subject: string;
+  grades: string[];
+  questionCount: number;
+}> = {
+  'sync-1': {
+    name: '高中数学同步诊断',
+    scene: 'sync',
+    phase: 'senior',
+    subject: 'math',
+    grades: ['g1'],
+    questionCount: 15,
+  },
+  'sync-2': {
+    name: '高中数学同步诊断',
+    scene: 'sync',
+    phase: 'senior',
+    subject: 'math',
+    grades: ['g2'],
+    questionCount: 18,
+  },
+  'sync-3': {
+    name: '初中数学同步诊断',
+    scene: 'sync',
+    phase: 'junior',
+    subject: 'math',
+    grades: ['c2'],
+    questionCount: 12,
+  },
+  'exam-1': {
+    name: '高中数学期中诊断',
+    scene: 'exam',
+    phase: 'senior',
+    subject: 'math',
+    grades: ['g1'],
+    questionCount: 25,
+  },
+  'exam-2': {
+    name: '高中物理期末诊断',
+    scene: 'exam',
+    phase: 'senior',
+    subject: 'physics',
+    grades: ['g2'],
+    questionCount: 20,
+  },
+  'vacation-1': {
+    name: '寒假数学专项诊断',
+    scene: 'vacation',
+    phase: 'senior',
+    subject: 'math',
+    grades: ['g1'],
+    questionCount: 30,
+  },
+  'vacation-2': {
+    name: '暑假英语综合诊断',
+    scene: 'vacation',
+    phase: 'junior',
+    subject: 'english',
+    grades: ['c3'],
+    questionCount: 35,
+  },
+  'zhongkao-1': {
+    name: '中考数学模拟诊断',
+    scene: 'zhongkao',
+    phase: 'junior',
+    subject: 'math',
+    grades: ['c3'],
+    questionCount: 28,
+  },
+  'zhongkao-2': {
+    name: '中考物理模拟诊断',
+    scene: 'zhongkao',
+    phase: 'junior',
+    subject: 'physics',
+    grades: ['c3'],
+    questionCount: 22,
+  },
+  'gaokao-1': {
+    name: '高考数学模拟诊断',
+    scene: 'gaokao',
+    phase: 'senior',
+    subject: 'math',
+    grades: ['g3'],
+    questionCount: 22,
+  },
+  'gaokao-2': {
+    name: '高考物理模拟诊断',
+    scene: 'gaokao',
+    phase: 'senior',
+    subject: 'physics',
+    grades: ['g3'],
+    questionCount: 18,
+  },
+};
+
+// 学段选项
+const phaseOptions = [
+  { id: 'primary', label: '小学' },
+  { id: 'junior', label: '初中' },
+  { id: 'senior', label: '高中' },
+];
+
+// 学科选项
+const subjectOptions = [
+  { id: 'chinese', label: '语文' },
+  { id: 'math', label: '数学' },
+  { id: 'english', label: '英语' },
+  { id: 'physics', label: '物理' },
+  { id: 'chemistry', label: '化学' },
+  { id: 'biology', label: '生物' },
+];
+
+// 年级配置（根据学段动态显示）
+const gradeConfig: Record<string, { id: string; label: string }[]> = {
+  senior: [
+    { id: 'g1', label: '高一' },
+    { id: 'g2', label: '高二' },
+    { id: 'g3', label: '高三' },
+  ],
+  junior: [
+    { id: 'c1', label: '初一' },
+    { id: 'c2', label: '初二' },
+    { id: 'c3', label: '初三' },
+  ],
+  primary: [
+    { id: 'p1', label: '一年级' },
+    { id: 'p2', label: '二年级' },
+    { id: 'p3', label: '三年级' },
+    { id: 'p4', label: '四年级' },
+    { id: 'p5', label: '五年级' },
+    { id: 'p6', label: '六年级' },
+  ],
+};
+
+// 题目来源选项
+const sourceOptions = [
+  { id: 'zhenti', label: '中考真题' },
+  { id: 'moni', label: '模拟题' },
+  { id: 'jingsai', label: '竞赛题' },
+  { id: 'chuangxin', label: '创新题' },
+];
+
+// 题目复杂度选项
+const complexityOptions = [
+  { id: 'single', label: '仅目标知识点' },
+  { id: 'related', label: '目标知识点+关联知识点' },
+  { id: 'multiple', label: '多知识点复合' },
+];
+
+// 难度档位
+const difficultyLevels = [
+  { id: 'easy', label: '易' },
+  { id: 'easier', label: '较易' },
+  { id: 'medium', label: '中档' },
+  { id: 'harder', label: '较难' },
+  { id: 'hard', label: '难' },
+];
+
+// 题型选项
+const questionTypeOptions = [
+  { id: 'choice', label: '选择题' },
+  { id: 'fill', label: '填空题' },
+  { id: 'answer', label: '解答题' },
+  { id: 'judge', label: '判断题' },
+  { id: 'short', label: '简答题' },
+];
+
+// 年份范围选项
+const yearRangeOptions = [
+  { id: 'all', label: '不限' },
+  { id: 'recent3', label: '近3年' },
+  { id: 'recent5', label: '近5年' },
+];
+
+// 难度占比类型
+interface DifficultyRatio {
+  easy: number;
+  easier: number;
+  medium: number;
+  harder: number;
+  hard: number;
+}
+
+// 类型占比项
+interface TypeRatioItem {
+  id: string;
+  typeId: string;
+  ratio: number;
+}
+
+// 排序规则
+interface SortRule {
+  field: 'reference' | 'composition';
+  type: 'unlimited' | 'custom';
+  value?: number;
+}
+
+// 表单数据类型
+interface FormData {
+  name: string;
+  phase: string;
+  subject: string;
+  grades: string[];
+  questionCount: number;
+  sources: string[];
+  complexity: string;
+  difficultyRatio: DifficultyRatio;
+  typeRatios: TypeRatioItem[];
+  yearRange: string;
+  referenceSort: SortRule;
+  compositionSort: SortRule;
+}
+
+// 初始表单数据
+const initialFormData: FormData = {
+  name: '',
+  phase: 'senior',
+  subject: 'math',
+  grades: [],
+  questionCount: 10,
+  sources: [],
+  complexity: '',
+  difficultyRatio: {
+    easy: 20,
+    easier: 20,
+    medium: 30,
+    harder: 20,
+    hard: 10,
+  },
+  typeRatios: [{ id: '1', typeId: '', ratio: 0 }],
+  yearRange: '',
+  referenceSort: { field: 'reference', type: 'unlimited' },
+  compositionSort: { field: 'composition', type: 'unlimited' },
+};
+
+// 表单项组件 - 左右布局
+function FormItem({
+  label,
+  required = false,
+  error,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start py-1">
+      <div className="w-[100px] flex-shrink-0 pt-2 text-right pr-3">
+        <label className="text-sm text-gray-600">
+          {label}
+          {required && <span className="text-red-500 ml-0.5">*</span>}
+        </label>
+      </div>
+      <div className="flex-1">
+        {children}
+        {error && (
+          <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 分组卡片组件
+function FormSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-3 bg-gray-50 border-b border-gray-200">
+        <div className="w-1 h-4 bg-emerald-500 rounded-full"></div>
+        <h3 className="text-sm font-bold text-gray-800">{title}</h3>
+      </div>
+      <div className="p-5 space-y-3">{children}</div>
+    </div>
+  );
+}
+
+export default function DiagnosisStrategyDetailPage() {
+  const router = useRouter();
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const strategyId = params?.id as string;
+  const isNew = strategyId === 'new' || !strategyId;
+  
+  // 从 URL 参数获取场景类型
+  const sceneParam = searchParams.get('scene') as SceneType | null;
+
+  const [formData, setFormData] = useState<FormData>(initialFormData);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  
+  // 查看模式状态：新建默认为编辑模式(false)，编辑已有策略默认为查看模式(true)
+  const [isViewMode, setIsViewMode] = useState(isNew ? false : true);
+  // 保存后的场景类型（用于返回时定位分组）
+  const [savedScene, setSavedScene] = useState<SceneType | null>(null);
+  // 新保存的策略 ID
+  const [savedStrategyId, setSavedStrategyId] = useState<string | null>(null);
+  // 原始策略名称（用于编辑模式下显示）
+  const [originalStrategyName, setOriginalStrategyName] = useState<string>('');
+  // 删除确认弹窗状态
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  // 保存前的表单数据（用于取消编辑时恢复）
+  const [savedFormData, setSavedFormData] = useState<FormData | null>(null);
+
+  // 加载已有策略数据（编辑模式）
+  useEffect(() => {
+    if (!isNew && strategyId && mockStrategyData[strategyId]) {
+      const data = mockStrategyData[strategyId];
+      const loadedData: FormData = {
+        ...initialFormData,
+        name: data.name,
+        phase: data.phase,
+        subject: data.subject,
+        grades: data.grades,
+        questionCount: data.questionCount,
+      };
+      setFormData(loadedData);
+      setOriginalStrategyName(data.name);
+      setSavedFormData(loadedData);  // 保存初始数据用于取消编辑时恢复
+    }
+  }, [isNew, strategyId]);
+
+  // 当前学段对应的年级列表
+  const currentGrades = gradeConfig[formData.phase] || [];
+
+  // 难度占比总和
+  const difficultySum = useMemo(() => {
+    const { easy, easier, medium, harder, hard } = formData.difficultyRatio;
+    return easy + easier + medium + harder + hard;
+  }, [formData.difficultyRatio]);
+
+  // 类型占比总和
+  const typeRatioSum = useMemo(() => {
+    return formData.typeRatios.reduce((sum, item) => sum + item.ratio, 0);
+  }, [formData.typeRatios]);
+
+  // 更新表单字段
+  const updateField = <K extends keyof FormData>(field: K, value: FormData[K]) => {
+    setFormData((prev) => {
+      const newData = { ...prev, [field]: value };
+      // 如果学段变化，清空年级选择
+      if (field === 'phase') {
+        newData.grades = [];
+      }
+      return newData;
+    });
+    if (errors[field]) {
+      setErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  // 更新难度占比
+  const updateDifficultyRatio = (key: keyof DifficultyRatio, value: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      difficultyRatio: {
+        ...prev.difficultyRatio,
+        [key]: value,
+      },
+    }));
+  };
+
+  // 添加类型占比项
+  const addTypeRatio = () => {
+    const newItem: TypeRatioItem = {
+      id: Date.now().toString(),
+      typeId: '',
+      ratio: 0,
+    };
+    updateField('typeRatios', [...formData.typeRatios, newItem]);
+  };
+
+  // 删除类型占比项
+  const removeTypeRatio = (id: string) => {
+    if (formData.typeRatios.length <= 1) return;
+    updateField(
+      'typeRatios',
+      formData.typeRatios.filter((item) => item.id !== id)
+    );
+  };
+
+  // 更新类型占比项
+  const updateTypeRatio = (id: string, field: 'typeId' | 'ratio', value: string | number) => {
+    updateField(
+      'typeRatios',
+      formData.typeRatios.map((item) =>
+        item.id === id ? { ...item, [field]: value } : item
+      )
+    );
+  };
+
+  // 更新排序规则
+  const updateSortRule = (
+    field: 'referenceSort' | 'compositionSort',
+    type: 'unlimited' | 'custom',
+    value?: number
+  ) => {
+    updateField(field, {
+      ...formData[field],
+      type,
+      value: type === 'custom' ? value || 0 : undefined,
+    });
+  };
+
+  // 切换年级选择
+  const toggleGrade = (gradeId: string) => {
+    const newGrades = formData.grades.includes(gradeId)
+      ? formData.grades.filter((id) => id !== gradeId)
+      : [...formData.grades, gradeId];
+    updateField('grades', newGrades);
+  };
+
+  // 表单校验
+  const validateForm = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.name.trim()) {
+      newErrors.name = '请输入策略名称';
+    }
+
+    if (formData.grades.length === 0) {
+      newErrors.grades = '请至少选择一个年级';
+    }
+
+    if (formData.questionCount < 1 || formData.questionCount > 100) {
+      newErrors.questionCount = '题目数量需在1-100之间';
+    }
+
+    if (!formData.complexity) {
+      newErrors.complexity = '请选择题目复杂度';
+    }
+
+    if (difficultySum !== 100) {
+      newErrors.difficultyRatio = '难度占比之和必须为100%';
+    }
+
+    const validTypeRatios = formData.typeRatios.filter((item) => item.typeId && item.ratio > 0);
+    if (validTypeRatios.length === 0) {
+      newErrors.typeRatios = '请至少添加一个题型';
+    } else if (typeRatioSum !== 100) {
+      newErrors.typeRatios = '类型占比之和必须为100%';
+    }
+
+    if (!formData.yearRange) {
+      newErrors.yearRange = '请选择年份范围';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // 保存
+  const handleSave = () => {
+    if (!validateForm()) return;
+    
+    // 确定场景类型（优先使用 URL 参数，否则默认为 sync）
+    const scene = sceneParam || 'sync';
+    
+    // 构建策略对象
+    const strategyData = {
+      id: isNew ? `strategy-${Date.now()}` : strategyId,  // 新建用新ID，编辑保留原ID
+      name: formData.name,
+      scene: scene,
+      phase: phaseOptions.find(p => p.id === formData.phase)?.label || '高中',
+      subject: subjectOptions.find(s => s.id === formData.subject)?.label || '数学',
+      grades: formData.grades.map(g => gradeConfig[formData.phase]?.find(grade => grade.id === g)?.label || g),
+      questionCount: formData.questionCount,
+      sources: formData.sources.map(s => sourceOptions.find(src => src.id === s)?.label || s),
+      complexity: complexityOptions.find(c => c.id === formData.complexity)?.label || '',
+      difficultyRatio: formData.difficultyRatio,
+      typeRatios: formData.typeRatios,
+      yearRange: yearRangeOptions.find(y => y.id === formData.yearRange)?.label || '',
+      referenceSort: formData.referenceSort,
+      compositionSort: formData.compositionSort,
+      publishStatus: 'pending' as const,
+      currentVersion: 'v1.0.0',
+      pendingChanges: 0,
+      createdAt: new Date().toISOString(),
+    };
+    
+    if (isNew) {
+      // 新建策略：保存到 newDiagnosisStrategies
+      const existingStrategies = JSON.parse(localStorage.getItem('newDiagnosisStrategies') || '[]');
+      localStorage.setItem('newDiagnosisStrategies', JSON.stringify([...existingStrategies, strategyData]));
+    } else {
+      // 编辑已有策略：保存到 updatedDiagnosisStrategies
+      const existingUpdates = JSON.parse(localStorage.getItem('updatedDiagnosisStrategies') || '[]');
+      // 检查是否已经存在该策略的更新记录
+      const existingIndex = existingUpdates.findIndex((s: any) => s.id === strategyId);
+      if (existingIndex >= 0) {
+        existingUpdates[existingIndex] = strategyData;
+      } else {
+        existingUpdates.push(strategyData);
+      }
+      localStorage.setItem('updatedDiagnosisStrategies', JSON.stringify(existingUpdates));
+    }
+    
+    // 触发自定义事件通知一级页面
+    window.dispatchEvent(new CustomEvent('newStrategySaved'));
+    
+    // 设置保存状态，进入查看模式
+    setSavedStrategyId(strategyData.id);
+    setSavedScene(scene);
+    setIsViewMode(true);
+  };
+
+  // 编辑（从查看模式切换到编辑模式）
+  const handleEdit = () => {
+    // 保存当前表单数据，用于取消时恢复
+    setSavedFormData({ ...formData });
+    setIsViewMode(false);
+  };
+
+  // 取消编辑
+  const handleCancelEdit = () => {
+    // 恢复保存前的表单数据
+    if (savedFormData) {
+      setFormData(savedFormData);
+    }
+    setErrors({});
+    setIsViewMode(true);
+  };
+
+  // 删除策略
+  const handleDelete = () => {
+    // 保存删除的策略ID到 localStorage
+    const deletedIds = JSON.parse(localStorage.getItem('deletedDiagnosisStrategies') || '[]');
+    localStorage.setItem('deletedDiagnosisStrategies', JSON.stringify([...deletedIds, strategyId]));
+    
+    // 触发自定义事件通知一级页面
+    window.dispatchEvent(new CustomEvent('newStrategySaved'));
+    
+    // 返回一级页面
+    router.push('/adaptive-strategy/strategy/diagnosis?refresh=1');
+  };
+
+  // 返回
+  const handleBack = () => {
+    // 返回到学情诊断策略一级页面
+    if (isViewMode && savedStrategyId) {
+      // 如果是保存后的查看模式，使用 push 并带参数
+      // 同时传递 scene 参数，让一级页面自动选中对应的场景分组
+      const sceneParam = savedScene ? `&scene=${savedScene}` : '';
+      router.push(`/adaptive-strategy/strategy/diagnosis?refresh=1${sceneParam}`);
+    } else {
+      router.back();
+    }
+  };
+
+  return (
+    <PageLayout
+      activeMenuId="adaptive-strategy"
+      breadcrumbs={[
+        { label: '自适应学习策略' },
+        { label: '策略广场' },
+        { label: isViewMode ? formData.name : (isNew ? '新建策略' : (originalStrategyName || '编辑策略')), isLast: true },
+      ]}
+    >
+      <div className="flex flex-col h-full">
+        {/* 标题栏 */}
+        <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleBack}
+              className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              返回
+            </button>
+            <div className="h-5 w-px bg-gray-300"></div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              {isViewMode ? formData.name : (isNew ? '新建策略' : (originalStrategyName || '编辑策略'))}
+            </h2>
+            {!isViewMode && <p className="text-sm text-gray-500">学情诊断策略配置</p>}
+            {isViewMode && savedStrategyId && isNew && (
+              <span className="px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-full border border-blue-200">
+                新增
+              </span>
+            )}
+            {isViewMode && savedStrategyId && !isNew && (
+              <span className="px-2 py-0.5 text-xs font-medium text-amber-700 bg-amber-50 rounded-full border border-amber-200">
+                有更新
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 表单区域 */}
+        <div className="flex-1 overflow-auto bg-gray-50 p-6">
+          <div className="space-y-4 max-w-4xl">
+        {/* 基本信息 */}
+        <FormSection title="基本信息">
+          <FormItem label="策略名称" required error={errors.name}>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => updateField('name', e.target.value)}
+              placeholder="请输入策略名称"
+              maxLength={50}
+              disabled={isViewMode}
+              className={`w-full max-w-md px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${
+                errors.name ? 'border-red-300' : 'border-gray-300'
+              } ${isViewMode ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : ''}`}
+            />
+          </FormItem>
+
+          <FormItem label="学段" required>
+            <select
+              value={formData.phase}
+              onChange={(e) => updateField('phase', e.target.value)}
+              disabled={isViewMode}
+              className={`w-32 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${
+                isViewMode ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'border-gray-300'
+              }`}
+            >
+              {phaseOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FormItem>
+
+          <FormItem label="学科" required>
+            <select
+              value={formData.subject}
+              onChange={(e) => updateField('subject', e.target.value)}
+              disabled={isViewMode}
+              className={`w-32 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${
+                isViewMode ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'border-gray-300'
+              }`}
+            >
+              {subjectOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FormItem>
+
+          <FormItem label="年级" required error={errors.grades}>
+            <div className="flex flex-wrap items-center gap-2">
+              {currentGrades.map((grade) => (
+                <label
+                  key={grade.id}
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors text-sm ${
+                    formData.grades.includes(grade.id)
+                      ? isViewMode 
+                        ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed'
+                        : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                      : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                  } ${isViewMode ? 'cursor-default' : 'cursor-pointer'}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData.grades.includes(grade.id)}
+                    onChange={() => toggleGrade(grade.id)}
+                    disabled={isViewMode}
+                    className="sr-only"
+                  />
+                  {grade.label}
+                </label>
+              ))}
+              <span className="text-gray-400 text-xs ml-1">可多选</span>
+            </div>
+          </FormItem>
+        </FormSection>
+
+        {/* 题目筛选条件 */}
+        <FormSection title="题目筛选条件">
+          <FormItem label="题目来源">
+            <div className="flex flex-wrap items-center gap-2">
+              {sourceOptions.map((option) => (
+                <label
+                  key={option.id}
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors text-sm ${
+                    formData.sources.includes(option.id)
+                      ? isViewMode 
+                        ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed'
+                        : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                      : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                  } ${isViewMode ? 'cursor-default' : 'cursor-pointer'}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData.sources.includes(option.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        updateField('sources', [...formData.sources, option.id]);
+                      } else {
+                        updateField(
+                          'sources',
+                          formData.sources.filter((id) => id !== option.id)
+                        );
+                      }
+                    }}
+                    disabled={isViewMode}
+                    className="sr-only"
+                  />
+                  {option.label}
+                </label>
+              ))}
+              <span className="text-gray-400 text-xs ml-1">可多选，不选则不限来源</span>
+            </div>
+          </FormItem>
+
+          <FormItem label="题目复杂度" required error={errors.complexity}>
+            <select
+              value={formData.complexity}
+              onChange={(e) => updateField('complexity', e.target.value)}
+              disabled={isViewMode}
+              className={`w-full max-w-md px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${
+                errors.complexity ? 'border-red-300' : isViewMode ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'border-gray-300'
+              }`}
+            >
+              <option value="">请选择</option>
+              {complexityOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FormItem>
+
+          <FormItem label="年份范围" required error={errors.yearRange}>
+            <select
+              value={formData.yearRange}
+              onChange={(e) => updateField('yearRange', e.target.value)}
+              disabled={isViewMode}
+              className={`w-32 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${
+                errors.yearRange ? 'border-red-300' : isViewMode ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'border-gray-300'
+              }`}
+            >
+              <option value="">请选择</option>
+              {yearRangeOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FormItem>
+
+          <FormItem label="排序规则">
+            <div className="space-y-3">
+              {/* 引用次数 */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-600 w-16">引用次数</span>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="referenceSort"
+                    checked={formData.referenceSort.type === 'unlimited'}
+                    onChange={() => updateSortRule('referenceSort', 'unlimited')}
+                    disabled={isViewMode}
+                    className="text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="text-sm text-gray-700">不限</span>
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="referenceSort"
+                    checked={formData.referenceSort.type === 'custom'}
+                    onChange={() => updateSortRule('referenceSort', 'custom', 0)}
+                    disabled={isViewMode}
+                    className="text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="text-sm text-gray-700">大于</span>
+                </label>
+                {formData.referenceSort.type === 'custom' && (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      value={formData.referenceSort.value || 0}
+                      onChange={(e) =>
+                        updateSortRule('referenceSort', 'custom', parseInt(e.target.value) || 0)
+                      }
+                      min={0}
+                      disabled={isViewMode}
+                      className={`w-16 px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${
+                        isViewMode ? 'bg-gray-100 border-gray-200 cursor-not-allowed' : 'border-gray-300'
+                      }`}
+                    />
+                    <span className="text-gray-600 text-sm">次</span>
+                  </div>
+                )}
+              </div>
+
+              {/* 组卷次数 */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-600 w-16">组卷次数</span>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="compositionSort"
+                    checked={formData.compositionSort.type === 'unlimited'}
+                    onChange={() => updateSortRule('compositionSort', 'unlimited')}
+                    disabled={isViewMode}
+                    className="text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="text-sm text-gray-700">不限</span>
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="compositionSort"
+                    checked={formData.compositionSort.type === 'custom'}
+                    onChange={() => updateSortRule('compositionSort', 'custom', 0)}
+                    disabled={isViewMode}
+                    className="text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="text-sm text-gray-700">大于</span>
+                </label>
+                {formData.compositionSort.type === 'custom' && (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      value={formData.compositionSort.value || 0}
+                      onChange={(e) =>
+                        updateSortRule('compositionSort', 'custom', parseInt(e.target.value) || 0)
+                      }
+                      min={0}
+                      disabled={isViewMode}
+                      className={`w-16 px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${
+                        isViewMode ? 'bg-gray-100 border-gray-200 cursor-not-allowed' : 'border-gray-300'
+                      }`}
+                    />
+                    <span className="text-gray-600 text-sm">次</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </FormItem>
+        </FormSection>
+
+        {/* 题目组成配置 */}
+        <FormSection title="题目组成配置">
+          <FormItem label="题目数量" required error={errors.questionCount}>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={formData.questionCount}
+                onChange={(e) => updateField('questionCount', parseInt(e.target.value) || 0)}
+                min={1}
+                max={100}
+                disabled={isViewMode}
+                className={`w-20 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${
+                  errors.questionCount ? 'border-red-300' : isViewMode ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'border-gray-300'
+                }`}
+              />
+              <span className={`text-sm ${isViewMode ? 'text-gray-400' : 'text-gray-600'}`}>题</span>
+            </div>
+          </FormItem>
+
+          <FormItem label="难度占比" required error={errors.difficultyRatio}>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-4">
+                {difficultyLevels.map((level) => (
+                  <div key={level.id} className="flex items-center gap-1.5">
+                    <span className={`text-sm ${isViewMode ? 'text-gray-400' : 'text-gray-600'}`}>{level.label}</span>
+                    <input
+                      type="number"
+                      value={formData.difficultyRatio[level.id as keyof DifficultyRatio]}
+                      onChange={(e) =>
+                        updateDifficultyRatio(level.id as keyof DifficultyRatio, parseInt(e.target.value) || 0)
+                      }
+                      min={0}
+                      max={100}
+                      disabled={isViewMode}
+                      className={`w-12 px-1.5 py-1 border rounded text-center text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                        errors.difficultyRatio ? 'border-red-300' : isViewMode ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'border-gray-300'
+                      }`}
+                    />
+                    <span className={`text-sm ${isViewMode ? 'text-gray-400' : 'text-gray-500'}`}>%</span>
+                  </div>
+                ))}
+                <div className="flex items-center gap-1.5 ml-2">
+                  <span className={`text-sm ${isViewMode ? 'text-gray-400' : 'text-gray-500'}`}>当前总和：</span>
+                  <span
+                    className={`text-sm font-medium ${
+                      isViewMode ? 'text-gray-500' : (difficultySum === 100 ? 'text-emerald-600' : 'text-red-500')
+                    }`}
+                  >
+                    {difficultySum}%
+                  </span>
+                  {difficultySum === 100 && !isViewMode && <Check className="w-4 h-4 text-emerald-500" />}
+                  {difficultySum !== 100 && !isViewMode && (
+                    <span className="text-red-500 text-xs">
+                      {difficultySum < 100 ? `（还需补齐${100 - difficultySum}%）` : `（超出${difficultySum - 100}%）`}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </FormItem>
+
+          <FormItem label="类型占比" required error={errors.typeRatios}>
+            <div className="space-y-2">
+              {formData.typeRatios.map((item) => (
+                <div key={item.id} className="flex items-center gap-3">
+                  <select
+                    value={item.typeId}
+                    onChange={(e) => updateTypeRatio(item.id, 'typeId', e.target.value)}
+                    disabled={isViewMode}
+                    className={`w-28 px-3 py-1.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm ${
+                      isViewMode ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">选择题型</option>
+                    {questionTypeOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className={`text-sm ${isViewMode ? 'text-gray-400' : 'text-gray-500'}`}>占比</span>
+                  <input
+                    type="number"
+                    value={item.ratio}
+                    onChange={(e) => updateTypeRatio(item.id, 'ratio', parseInt(e.target.value) || 0)}
+                    min={0}
+                    max={100}
+                    disabled={isViewMode}
+                    className={`w-14 px-2 py-1.5 border rounded-lg text-center text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                      isViewMode ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed' : 'border-gray-300'
+                    }`}
+                  />
+                  <span className={`text-sm ${isViewMode ? 'text-gray-400' : 'text-gray-500'}`}>%</span>
+                  {formData.typeRatios.length > 1 && !isViewMode && (
+                    <button
+                      onClick={() => removeTypeRatio(item.id)}
+                      className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div className="flex items-center gap-3">
+                {!isViewMode && (
+                  <button
+                    onClick={addTypeRatio}
+                    className="flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-700"
+                  >
+                    <Plus className="w-4 h-4" />
+                    添加题型
+                  </button>
+                )}
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-sm ${isViewMode ? 'text-gray-400' : 'text-gray-500'}`}>当前总和：</span>
+                  <span
+                    className={`text-sm font-medium ${
+                      isViewMode ? 'text-gray-500' : (typeRatioSum === 100 ? 'text-emerald-600' : 'text-red-500')
+                    }`}
+                  >
+                    {typeRatioSum}%
+                  </span>
+                  {typeRatioSum === 100 && !isViewMode && <Check className="w-4 h-4 text-emerald-500" />}
+                  {typeRatioSum !== 100 && typeRatioSum > 0 && !isViewMode && (
+                    <span className="text-red-500 text-xs">
+                      {typeRatioSum < 100 ? `（还需补齐${100 - typeRatioSum}%）` : `（超出${typeRatioSum - 100}%）`}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </FormItem>
+        </FormSection>
+
+        {/* 操作按钮 */}
+        <div className="flex justify-between gap-3 pt-2">
+          {/* 左侧：删除按钮（仅查看模式且非新建时显示） */}
+          <div>
+            {isViewMode && !isNew && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors flex items-center gap-2 text-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                删除
+              </button>
+            )}
+          </div>
+          
+          {/* 右侧：编辑/取消/保存按钮 */}
+          <div className="flex gap-3">
+            {isViewMode ? (
+              // 查看模式：显示编辑按钮
+              <button
+                onClick={handleEdit}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 text-sm"
+              >
+                <Edit3 className="w-4 h-4" />
+                编辑
+              </button>
+            ) : (
+              // 编辑模式：显示取消和保存按钮
+              <>
+                <button
+                  onClick={isNew ? handleBack : handleCancelEdit}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 text-sm"
+                >
+                  <Save className="w-4 h-4" />
+                  保存
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 删除确认弹窗 */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">确认删除</h3>
+                <p className="text-sm text-gray-500">此操作不可撤销</p>
+              </div>
+            </div>
+            <p className="text-gray-600 mb-6">
+              确定要删除策略「<span className="font-medium text-gray-900">{formData.name}</span>」吗？删除后将无法恢复。
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              >
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </PageLayout>
+  );
+}
+
+
+=== FILE: src/app/adaptive-strategy/strategy/diagnosis/page.tsx ===
+'use client';
+
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import {
+  Plus,
+  Stethoscope,
+  FileText,
+  Calculator,
+  BookOpen,
+  Target,
+  ArrowLeft,
+  History,
+  X,
+  AlertTriangle,
+  Check,
+  Clock,
+  Info,
+} from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import PageLayout from '@/components/shared/PageLayout';
+
+// 场景类型（不包含 all）
+type SceneType = 'sync' | 'exam' | 'vacation' | 'zhongkao' | 'gaokao';
+
+// 场景选择类型（包含 all）
+type SceneFilterType = 'all' | SceneType;
+
+// 版本历史类型
+interface VersionHistory {
+  version: string;
+  releaseDate: string;
+  releaseNotes: string;
+  publisher?: string;
+  publisherAccount?: string;
+  changes: {
+    type: 'add' | 'update' | 'delete';
+    strategyName: string;
+    scene: string;
+  }[];
+}
+
+// 场景配置
+const sceneOptions: { id: SceneFilterType; label: string }[] = [
+  { id: 'all', label: '全部' },
+  { id: 'sync', label: '同步学' },
+  { id: 'exam', label: '期中期末考' },
+  { id: 'vacation', label: '寒暑假' },
+  { id: 'zhongkao', label: '中考' },
+  { id: 'gaokao', label: '高考' },
+];
+
+// 学段配置
+const phaseOptions = [
+  { id: 'senior', label: '高中' },
+  { id: 'junior', label: '初中' },
+  { id: 'primary', label: '小学' },
+];
+
+// 学科配置
+const subjectOptions = [
+  { id: 'math', label: '数学' },
+  { id: 'chinese', label: '语文' },
+  { id: 'english', label: '英语' },
+  { id: 'physics', label: '物理' },
+  { id: 'chemistry', label: '化学' },
+  { id: 'biology', label: '生物' },
+];
+
+// 年级配置（根据学段动态显示）
+const gradeConfig: Record<string, { id: string; label: string }[]> = {
+  senior: [
+    { id: 'all', label: '全部年级' },
+    { id: 'g1', label: '高一' },
+    { id: 'g2', label: '高二' },
+    { id: 'g3', label: '高三' },
+  ],
+  junior: [
+    { id: 'all', label: '全部年级' },
+    { id: 'c1', label: '初一' },
+    { id: 'c2', label: '初二' },
+    { id: 'c3', label: '初三' },
+  ],
+  primary: [
+    { id: 'all', label: '全部年级' },
+    { id: 'p1', label: '一年级' },
+    { id: 'p2', label: '二年级' },
+    { id: 'p3', label: '三年级' },
+    { id: 'p4', label: '四年级' },
+    { id: 'p5', label: '五年级' },
+    { id: 'p6', label: '六年级' },
+  ],
+};
+
+// 策略数据类型
+interface Strategy {
+  id: string;
+  name: string;
+  scene: SceneType;
+  phase: string;
+  subject: string;
+  grade: string;
+  questionCount: number;
+  difficultyRatio: string;
+  typeRatio: string;
+  publishStatus: 'published' | 'pending';
+  currentVersion: string;
+  pendingChanges?: number;
+  hasUpdate?: boolean;  // 有更新
+  isNew?: boolean;      // 新增
+}
+
+// 场景分组顺序
+const sceneOrder: SceneType[] = ['sync', 'exam', 'vacation', 'zhongkao', 'gaokao'];
+
+// 场景分组名称
+const sceneGroupNames: Record<SceneType, string> = {
+  sync: '同步学',
+  exam: '期中期末考',
+  vacation: '寒暑假',
+  zhongkao: '中考',
+  gaokao: '高考',
+};
+
+// 场景图标和颜色
+const sceneStyles: Record<SceneType, { bgColor: string; icon: React.ReactNode }> = {
+  sync: { 
+    bgColor: 'bg-gradient-to-br from-blue-400 to-blue-600', 
+    icon: <BookOpen className="w-6 h-6 text-white" /> 
+  },
+  exam: { 
+    bgColor: 'bg-gradient-to-br from-purple-400 to-purple-600', 
+    icon: <FileText className="w-6 h-6 text-white" /> 
+  },
+  vacation: { 
+    bgColor: 'bg-gradient-to-br from-orange-400 to-orange-600', 
+    icon: <Target className="w-6 h-6 text-white" /> 
+  },
+  zhongkao: { 
+    bgColor: 'bg-gradient-to-br from-green-400 to-green-600', 
+    icon: <Calculator className="w-6 h-6 text-white" /> 
+  },
+  gaokao: { 
+    bgColor: 'bg-gradient-to-br from-red-400 to-red-600', 
+    icon: <Target className="w-6 h-6 text-white" /> 
+  },
+};
+
+// 模拟策略数据
+const mockStrategies: Strategy[] = [
+  // 同步学
+  {
+    id: 'sync-1',
+    name: '高中数学同步诊断',
+    scene: 'sync',
+    phase: '高中',
+    subject: '数学',
+    grade: '高一',
+    questionCount: 15,
+    difficultyRatio: '易20% 较易20% 中档30% 较难20% 难10%',
+    typeRatio: '选择40% 填空30% 解答30%',
+    publishStatus: 'published',
+    currentVersion: 'v1.2.0',
+  },
+  {
+    id: 'sync-2',
+    name: '高中数学同步诊断',
+    scene: 'sync',
+    phase: '高中',
+    subject: '数学',
+    grade: '高二',
+    questionCount: 18,
+    difficultyRatio: '易15% 较易25% 中档30% 较难20% 难10%',
+    typeRatio: '选择35% 填空35% 解答30%',
+    publishStatus: 'pending',
+    currentVersion: 'v1.0.0',
+    pendingChanges: 2,
+  },
+  {
+    id: 'sync-3',
+    name: '初中数学同步诊断',
+    scene: 'sync',
+    phase: '初中',
+    subject: '数学',
+    grade: '初二',
+    questionCount: 12,
+    difficultyRatio: '易25% 较易25% 中档30% 较难15% 难5%',
+    typeRatio: '选择50% 填空30% 解答20%',
+    publishStatus: 'published',
+    currentVersion: 'v1.1.0',
+  },
+  // 期中期末考
+  {
+    id: 'exam-1',
+    name: '高中数学期中诊断',
+    scene: 'exam',
+    phase: '高中',
+    subject: '数学',
+    grade: '高一',
+    questionCount: 25,
+    difficultyRatio: '易15% 较易20% 中档35% 较难20% 难10%',
+    typeRatio: '选择40% 填空20% 解答40%',
+    publishStatus: 'published',
+    currentVersion: 'v2.0.0',
+  },
+  {
+    id: 'exam-2',
+    name: '高中物理期末诊断',
+    scene: 'exam',
+    phase: '高中',
+    subject: '物理',
+    grade: '高二',
+    questionCount: 20,
+    difficultyRatio: '易10% 较易20% 中档35% 较难25% 难10%',
+    typeRatio: '选择40% 填空20% 解答40%',
+    publishStatus: 'pending',
+    currentVersion: 'v1.0.0',
+    pendingChanges: 1,
+  },
+  // 寒暑假
+  {
+    id: 'vacation-1',
+    name: '寒假数学专项诊断',
+    scene: 'vacation',
+    phase: '高中',
+    subject: '数学',
+    grade: '高一',
+    questionCount: 30,
+    difficultyRatio: '易20% 较易30% 中档30% 较难15% 难5%',
+    typeRatio: '选择30% 填空30% 解答40%',
+    publishStatus: 'published',
+    currentVersion: 'v1.3.0',
+  },
+  {
+    id: 'vacation-2',
+    name: '暑假英语综合诊断',
+    scene: 'vacation',
+    phase: '初中',
+    subject: '英语',
+    grade: '初三',
+    questionCount: 35,
+    difficultyRatio: '易25% 较易25% 中档30% 较难15% 难5%',
+    typeRatio: '选择50% 填空25% 写作25%',
+    publishStatus: 'published',
+    currentVersion: 'v1.0.0',
+  },
+  // 中考
+  {
+    id: 'zhongkao-1',
+    name: '中考数学模拟诊断',
+    scene: 'zhongkao',
+    phase: '初中',
+    subject: '数学',
+    grade: '初三',
+    questionCount: 28,
+    difficultyRatio: '易10% 较易20% 中档35% 较难25% 难10%',
+    typeRatio: '选择40% 填空20% 解答40%',
+    publishStatus: 'published',
+    currentVersion: 'v2.1.0',
+  },
+  {
+    id: 'zhongkao-2',
+    name: '中考物理模拟诊断',
+    scene: 'zhongkao',
+    phase: '初中',
+    subject: '物理',
+    grade: '初三',
+    questionCount: 22,
+    difficultyRatio: '易10% 较易20% 中档40% 较难20% 难10%',
+    typeRatio: '选择45% 填空25% 解答30%',
+    publishStatus: 'pending',
+    currentVersion: 'v1.0.0',
+    pendingChanges: 3,
+  },
+  // 高考
+  {
+    id: 'gaokao-1',
+    name: '高考数学模拟诊断',
+    scene: 'gaokao',
+    phase: '高中',
+    subject: '数学',
+    grade: '高三',
+    questionCount: 22,
+    difficultyRatio: '易5% 较易15% 中档35% 较难30% 难15%',
+    typeRatio: '选择45% 填空15% 解答40%',
+    publishStatus: 'published',
+    currentVersion: 'v3.0.0',
+  },
+  {
+    id: 'gaokao-2',
+    name: '高考物理模拟诊断',
+    scene: 'gaokao',
+    phase: '高中',
+    subject: '物理',
+    grade: '高三',
+    questionCount: 18,
+    difficultyRatio: '易5% 较易15% 中档35% 较难30% 难15%',
+    typeRatio: '选择40% 填空20% 解答40%',
+    publishStatus: 'published',
+    currentVersion: 'v2.0.0',
+  },
+];
+
+// 策略卡片组件
+function StrategyCard({ strategy }: { strategy: Strategy }) {
+  const router = useRouter();
+  const style = sceneStyles[strategy.scene];
+
+  const handleClick = () => {
+    router.push(`/adaptive-strategy/strategy/diagnosis/${strategy.id}`);
+  };
+
+  return (
+    <div
+      className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-lg hover:border-emerald-200 transition-all duration-300"
+      style={{ width: '280px' }}
+    >
+      {/* 上半部分：图标和名称 */}
+      <div className="p-6 flex flex-col items-center text-center bg-gradient-to-b from-gray-50 to-white">
+        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 shadow-lg ${style.bgColor}`}>
+          {style.icon}
+        </div>
+        <h3 className="text-base font-bold text-gray-900 mb-1">{strategy.name}</h3>
+        <p className="text-sm text-gray-500">{strategy.phase} | {strategy.subject} | {strategy.grade}</p>
+        
+        {/* 状态标签 */}
+        <div className="mt-2">
+          {strategy.isNew ? (
+            <span className="px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-full border border-blue-200">
+              新增
+            </span>
+          ) : strategy.hasUpdate ? (
+            <span className="px-2 py-0.5 text-xs font-medium text-amber-700 bg-amber-50 rounded-full border border-amber-200">
+              有更新{strategy.pendingChanges && strategy.pendingChanges > 0 ? ` · ${strategy.pendingChanges}项变更` : ''}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* 下半部分：详细信息 */}
+      <div className="px-5 py-4 border-t border-gray-100 space-y-2">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-500">题目数量</span>
+          <span className="font-medium text-gray-900">{strategy.questionCount}题</span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-500">难度占比</span>
+          <span className="font-medium text-gray-900 text-xs truncate max-w-[160px]" title={strategy.difficultyRatio}>
+            {strategy.difficultyRatio}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-500">类型占比</span>
+          <span className="font-medium text-gray-900 text-xs truncate max-w-[160px]" title={strategy.typeRatio}>
+            {strategy.typeRatio}
+          </span>
+        </div>
+        
+        {/* 进入管理按钮 */}
+        <div className="pt-2 border-t border-gray-100 mt-3">
+          <button
+            onClick={handleClick}
+            className="w-full flex items-center justify-center gap-1 py-2 text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+          >
+            进入管理
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 场景分组组件
+function SceneGroup({ 
+  sceneType, 
+  strategies,
+  onAddNew,
+}: { 
+  sceneType: SceneType;
+  strategies: Strategy[];
+  onAddNew: () => void;
+}) {
+  const style = sceneStyles[sceneType];
+  const groupName = sceneGroupNames[sceneType];
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      {/* 分组标题栏 */}
+      <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
+        <div className="flex items-center gap-3">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${style.bgColor}`}>
+            {style.icon}
+          </div>
+          <div>
+            <span className="font-semibold text-gray-900">{groupName}</span>
+            <span className="text-sm text-gray-400 ml-2">({strategies.length}个策略)</span>
+          </div>
+        </div>
+        <button
+          onClick={onAddNew}
+          className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+        >
+          <Plus className="w-4 h-4" />
+          新增
+        </button>
+      </div>
+
+      {/* 策略卡片列表 */}
+      <div className="p-5">
+        {strategies.length > 0 ? (
+          <div className="flex flex-wrap gap-4">
+            {strategies.map((strategy) => (
+              <StrategyCard key={strategy.id} strategy={strategy} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-400">
+            暂无策略，点击"新增"添加
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function DiagnosisStrategyListPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  // 检测是否需要刷新（从新建页面返回时带 ?refresh=1 参数）
+  const needRefresh = searchParams.get('refresh') === '1';
+  // 获取返回时的场景参数，用于自动选中对应的场景分组
+  const returnScene = searchParams.get('scene') as SceneFilterType | null;
+  
+  // 筛选状态
+  const [selectedPhase, setSelectedPhase] = useState('senior');
+  const [selectedSubject, setSelectedSubject] = useState('math');
+  const [selectedGrade, setSelectedGrade] = useState('all');
+  const [selectedScene, setSelectedScene] = useState<SceneFilterType>('all');
+  
+  // 新增的策略（从 localStorage 读取）
+  const [newStrategies, setNewStrategies] = useState<Strategy[]>([]);
+  // 更新的策略数据（用于覆盖已有策略）
+  const [updatedStrategies, setUpdatedStrategies] = useState<Map<string, Partial<Strategy>>>(new Map());
+  // 删除的策略ID列表
+  const [deletedStrategyIds, setDeletedStrategyIds] = useState<Set<string>>(new Set());
+  
+  // 版本管理状态
+  const [currentVersion, setCurrentVersion] = useState('v1.0.0');
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [releaseNotes, setReleaseNotes] = useState('');
+  const [isPublished, setIsPublished] = useState(true);  // 是否已发布状态
+  const [publishType, setPublishType] = useState<'immediate' | 'scheduled'>('immediate');
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('02:00');
+  
+  // 定时发布信息
+  const [scheduledPublish, setScheduledPublish] = useState<{
+    version: string;
+    scheduledDate: string;
+    scheduledTime: string;
+    description: string;
+  } | null>(null);
+  
+  // 模拟版本历史数据
+  const [versionHistory, setVersionHistory] = useState<VersionHistory[]>([
+    {
+      version: 'v1.0.0',
+      releaseDate: '2024-01-15',
+      releaseNotes: '初始版本发布，包含同步学、期中期末考、寒暑假、中考、高考五大场景的学情诊断策略配置功能。',
+      publisher: '系统管理员',
+      publisherAccount: '000001',
+      changes: [],
+    },
+  ]);
+  
+  // 检测是否有待发布的变更
+  const hasPendingChanges = useMemo(() => {
+    return newStrategies.length > 0 || updatedStrategies.size > 0 || deletedStrategyIds.size > 0;
+  }, [newStrategies, updatedStrategies, deletedStrategyIds]);
+
+  // 读取 localStorage 中的新策略和更新策略
+  const loadNewStrategies = React.useCallback(() => {
+    // 读取新增的策略
+    const savedStrategies = localStorage.getItem('newDiagnosisStrategies');
+    if (savedStrategies) {
+      try {
+        const parsed = JSON.parse(savedStrategies);
+        // 转换为 Strategy 格式
+        const convertedStrategies: Strategy[] = parsed.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          scene: s.scene,
+          phase: s.phase,
+          subject: s.subject,
+          grade: Array.isArray(s.grades) ? s.grades.join('、') : s.grades,
+          questionCount: s.questionCount,
+          difficultyRatio: s.difficultyRatio ? 
+            `易${s.difficultyRatio.easy}% 较易${s.difficultyRatio.easier}% 中档${s.difficultyRatio.medium}% 较难${s.difficultyRatio.harder}% 难${s.difficultyRatio.hard}%` : '',
+          typeRatio: s.typeRatios ? 
+            s.typeRatios.map((t: any) => {
+              const typeMap: Record<string, string> = {
+                choice: '选择',
+                fill: '填空',
+                answer: '解答',
+                judge: '判断',
+                short: '简答',
+              };
+              const typeLabel = typeMap[t.typeId] || t.typeId;
+              return `${typeLabel}${t.ratio}%`;
+            }).join(' ') : '',
+          publishStatus: s.publishStatus,
+          currentVersion: s.currentVersion,
+          pendingChanges: s.pendingChanges,
+          isNew: true,  // 标记为新增
+        }));
+        setNewStrategies(prev => [...prev, ...convertedStrategies]);
+        // 清除 localStorage（已读取）
+        localStorage.removeItem('newDiagnosisStrategies');
+      } catch (e) {
+        console.error('Failed to parse saved strategies:', e);
+      }
+    }
+    
+    // 读取更新的策略数据
+    const savedUpdates = localStorage.getItem('updatedDiagnosisStrategies');
+    if (savedUpdates) {
+      try {
+        const parsed: any[] = JSON.parse(savedUpdates);
+        // 转换为 Map<id, Strategy> 格式
+        const updatesMap = new Map<string, Partial<Strategy>>();
+        parsed.forEach((s: any) => {
+          updatesMap.set(s.id, {
+            id: s.id,
+            name: s.name,
+            scene: s.scene,
+            phase: s.phase,
+            subject: s.subject,
+            grade: Array.isArray(s.grades) ? s.grades.join('、') : s.grades,
+            questionCount: s.questionCount,
+            difficultyRatio: s.difficultyRatio ? 
+              `易${s.difficultyRatio.easy}% 较易${s.difficultyRatio.easier}% 中档${s.difficultyRatio.medium}% 较难${s.difficultyRatio.harder}% 难${s.difficultyRatio.hard}%` : '',
+            typeRatio: s.typeRatios ? 
+              s.typeRatios.map((t: any) => {
+                const typeMap: Record<string, string> = {
+                  choice: '选择',
+                  fill: '填空',
+                  answer: '解答',
+                  judge: '判断',
+                  short: '简答',
+                };
+                const typeLabel = typeMap[t.typeId] || t.typeId;
+                return `${typeLabel}${t.ratio}%`;
+              }).join(' ') : '',
+            hasUpdate: true,  // 标记为有更新
+          });
+        });
+        setUpdatedStrategies(prev => new Map([...prev, ...updatesMap]));
+        // 清除 localStorage（已读取）
+        localStorage.removeItem('updatedDiagnosisStrategies');
+      } catch (e) {
+        console.error('Failed to parse updated strategies:', e);
+      }
+    }
+    
+    // 读取删除的策略ID
+    const savedDeletes = localStorage.getItem('deletedDiagnosisStrategies');
+    if (savedDeletes) {
+      try {
+        const parsed: string[] = JSON.parse(savedDeletes);
+        setDeletedStrategyIds(prev => new Set([...prev, ...parsed]));
+        // 清除 localStorage（已读取）
+        localStorage.removeItem('deletedDiagnosisStrategies');
+      } catch (e) {
+        console.error('Failed to parse deleted strategies:', e);
+      }
+    }
+  }, []);
+
+  // 组件挂载时读取，或者在 URL 参数 refresh=1 时读取
+  useEffect(() => {
+    loadNewStrategies();
+    
+    // 如果返回时带有 scene 参数，自动选中对应的场景分组
+    if (returnScene && returnScene !== 'all') {
+      setSelectedScene(returnScene);
+    }
+    
+    // 如果有 refresh 参数，清除 URL 参数
+    if (needRefresh) {
+      // 替换 URL，移除 refresh 和 scene 参数
+      window.history.replaceState({}, '', '/adaptive-strategy/strategy/diagnosis');
+    }
+  }, [loadNewStrategies, needRefresh, returnScene]);
+
+  // 页面可见性变化时读取（处理从新建页面返回的情况）
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadNewStrategies();
+      }
+    };
+    
+    const handleFocus = () => {
+      loadNewStrategies();
+    };
+    
+    // 监听自定义事件（新建页面保存后触发）
+    const handleNewStrategy = () => {
+      loadNewStrategies();
+    };
+    
+    // 监听 pageshow 事件（处理浏览器前进/后退导航）
+    const handlePageShow = (event: PageTransitionEvent) => {
+      // persisted 为 true 表示页面从 bfcache 恢复
+      if (event.persisted) {
+        loadNewStrategies();
+      }
+    };
+    
+    // 只在页面可见时定期检查 localStorage（作为后备方案）
+    let intervalId: NodeJS.Timeout | null = null;
+    const startInterval = () => {
+      if (!intervalId) {
+        intervalId = setInterval(() => {
+          loadNewStrategies();
+        }, 500);
+      }
+    };
+    const stopInterval = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+    
+    // 处理可见性变化（用于定时器控制）
+    const handleVisibilityForInterval = () => {
+      if (document.visibilityState === 'visible') {
+        startInterval();
+      } else {
+        stopInterval();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleVisibilityForInterval);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('newStrategySaved', handleNewStrategy);
+    window.addEventListener('pageshow', handlePageShow);
+    
+    // 页面可见时启动定时器
+    if (document.visibilityState === 'visible') {
+      startInterval();
+    }
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('visibilitychange', handleVisibilityForInterval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('newStrategySaved', handleNewStrategy);
+      window.removeEventListener('pageshow', handlePageShow);
+      stopInterval();
+    };
+  }, [loadNewStrategies]);
+
+  // 获取当前学段的年级选项
+  const gradeOptions = gradeConfig[selectedPhase] || gradeConfig.senior;
+
+  // 合并模拟数据和新策略
+  const allStrategies = useMemo(() => {
+    // 处理 mockStrategies，用更新的数据覆盖原有策略，并过滤掉删除的策略
+    const processedMockStrategies = mockStrategies
+      .filter(s => !deletedStrategyIds.has(s.id))  // 过滤删除的策略
+      .map(s => {
+        const update = updatedStrategies.get(s.id);
+        if (update) {
+          // 如果有更新数据，合并更新
+          return { ...s, ...update, hasUpdate: true };
+        }
+        return s;
+      });
+    
+    // 新增的策略也要过滤掉已删除的
+    const filteredNewStrategies = newStrategies.filter(s => !deletedStrategyIds.has(s.id));
+    
+    return [...processedMockStrategies, ...filteredNewStrategies];
+  }, [newStrategies, updatedStrategies, deletedStrategyIds]);
+
+  // 根据筛选条件过滤策略
+  const filteredStrategies = useMemo(() => {
+    return allStrategies.filter((s) => {
+      // 场景筛选
+      if (selectedScene !== 'all' && s.scene !== selectedScene) return false;
+      
+      // 学段筛选
+      const phaseLabel = phaseOptions.find(p => p.id === selectedPhase)?.label;
+      if (s.phase !== phaseLabel) return false;
+      
+      // 学科筛选
+      const subjectLabel = subjectOptions.find(sub => sub.id === selectedSubject)?.label;
+      if (s.subject !== subjectLabel) return false;
+      
+      // 年级筛选
+      if (selectedGrade !== 'all') {
+        const gradeLabel = gradeOptions.find(g => g.id === selectedGrade)?.label;
+        if (s.grade !== gradeLabel) return false;
+      }
+      
+      return true;
+    });
+  }, [selectedPhase, selectedSubject, selectedGrade, selectedScene]);
+
+  // 按场景分组
+  const groupedStrategies = useMemo(() => {
+    const groups: Record<SceneType, Strategy[]> = {
+      sync: [],
+      exam: [],
+      vacation: [],
+      zhongkao: [],
+      gaokao: [],
+    };
+
+    filteredStrategies.forEach((s) => {
+      groups[s.scene].push(s);
+    });
+
+    return groups;
+  }, [filteredStrategies]);
+
+  // 确定要显示的分组
+  const displayScenes = selectedScene === 'all' 
+    ? sceneOrder 
+    : [selectedScene];
+
+  // 新增策略
+  const handleAddNew = (sceneType: SceneType) => {
+    router.push(`/adaptive-strategy/strategy/diagnosis/new?scene=${sceneType}`);
+  };
+
+  // 生成新版本号
+  const generateNewVersion = () => {
+    const parts = currentVersion.replace('v', '').split('.').map(Number);
+    parts[2] += 1;  // 增加修订号
+    return `v${parts.join('.')}`;
+  };
+
+  // 获取变更摘要
+  const getChangesSummary = () => {
+    const changes: { type: 'add' | 'update' | 'delete'; strategyName: string; scene: string }[] = [];
+    
+    // 新增的策略
+    newStrategies.forEach(s => {
+      changes.push({
+        type: 'add',
+        strategyName: s.name,
+        scene: sceneGroupNames[s.scene],
+      });
+    });
+    
+    // 更新的策略
+    updatedStrategies.forEach((update, id) => {
+      const original = mockStrategies.find(s => s.id === id);
+      if (original) {
+        changes.push({
+          type: 'update',
+          strategyName: update.name || original.name,
+          scene: sceneGroupNames[update.scene || original.scene],
+        });
+      }
+    });
+    
+    // 删除的策略
+    deletedStrategyIds.forEach(id => {
+      const original = mockStrategies.find(s => s.id === id);
+      if (original) {
+        changes.push({
+          type: 'delete',
+          strategyName: original.name,
+          scene: sceneGroupNames[original.scene],
+        });
+      }
+    });
+    
+    return changes;
+  };
+
+  // 处理发布
+  const handlePublish = () => {
+    if (!releaseNotes.trim()) {
+      alert('请填写更新说明');
+      return;
+    }
+    
+    // 二次发布时沿用之前定时发布的版本号
+    const newVersion = scheduledPublish?.version || generateNewVersion();
+    const changes = getChangesSummary();
+    
+    if (publishType === 'scheduled') {
+      // 定时发布：保存定时信息
+      setScheduledPublish({
+        version: newVersion,
+        scheduledDate,
+        scheduledTime,
+        description: releaseNotes
+      });
+      // 清空待发布的变更
+      setNewStrategies([]);
+      setUpdatedStrategies(new Map());
+      setDeletedStrategyIds(new Set());
+    } else {
+      // 立即发布
+      // 生成6位随机数字账号
+      const publisherAccount = String(Math.floor(100000 + Math.random() * 900000));
+      
+      // 创建新版本记录
+      const newVersionHistory: VersionHistory = {
+        version: newVersion,
+        releaseDate: new Date().toISOString().split('T')[0],
+        releaseNotes: releaseNotes,
+        publisher: '当前用户',
+        publisherAccount,
+        changes: changes,
+      };
+      
+      setVersionHistory(prev => [newVersionHistory, ...prev]);
+      setCurrentVersion(newVersion);
+      setIsPublished(true);
+      
+      // 清空待发布的变更和定时信息
+      setNewStrategies([]);
+      setUpdatedStrategies(new Map());
+      setDeletedStrategyIds(new Set());
+      setScheduledPublish(null);
+    }
+    
+    setReleaseNotes('');
+    setPublishType('immediate');
+    setShowPublishModal(false);
+  };
+
+  return (
+    <PageLayout
+      activeMenuId="adaptive-strategy"
+      breadcrumbs={[
+        { label: '自适应学习策略' },
+        { label: '策略广场' },
+        { label: '学情诊断', isLast: true },
+      ]}
+    >
+      <div className="flex flex-col h-full">
+        {/* 第一行：模块头部 */}
+        <div className="bg-white px-6 py-4 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            {/* 左侧：返回、图标、标题、模块简介 */}
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => router.push('/adaptive-strategy')}
+                className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                返回
+              </button>
+              <div className="h-5 w-px bg-gray-300"></div>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
+                <Stethoscope className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">学情诊断策略</h2>
+                <p className="text-sm text-gray-500">针对不同学段、学科、学习场景，配置初次诊断出题策略</p>
+              </div>
+            </div>
+            
+            {/* 右侧：版本和状态（上下布局，左对齐） */}
+            <div className="flex flex-col items-start gap-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500 whitespace-nowrap">版本：</span>
+                <span className="px-2 py-0.5 text-xs font-medium text-gray-600 bg-gray-100 rounded border border-gray-200">
+                  {currentVersion}
+                </span>
+                <button
+                  onClick={() => setShowHistoryModal(true)}
+                  className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                  title="查看历史版本"
+                >
+                  <History className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500 whitespace-nowrap">状态：</span>
+                <span className="px-2 py-0.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-full border border-emerald-200">
+                  已发布
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 第二行：发布状态条（独立模块） */}
+        {/* 定时发布状态：显示蓝色提醒条（无新变更时） */}
+        {scheduledPublish && !hasPendingChanges && (
+          <div className="bg-blue-50 mx-6 mt-4 rounded-lg px-4 py-3 flex-shrink-0 border border-blue-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-blue-600" />
+                <span className="text-sm text-blue-800">
+                  <span className="font-medium">{scheduledPublish.version}</span> 版本将于您设定的时间（
+                  <span className="font-medium">{scheduledPublish.scheduledDate} {scheduledPublish.scheduledTime}</span>）自动发布，发布后更新的内容将正式生效
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowHistoryModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-700 hover:text-blue-800 hover:bg-blue-100 rounded-lg transition-colors"
+                >
+                  <History className="w-4 h-4" />
+                  查看历史版本
+                </button>
+                <button
+                  onClick={() => {
+                    // 取消定时发布，恢复待发布状态
+                    setScheduledPublish(null);
+                    // 恢复一条变更记录
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm"
+                >
+                  取消定时
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* 待发布状态：显示橙色提醒条（有变更时，包括有定时信息的情况） */}
+        {hasPendingChanges && (
+          <>
+            <div className="bg-amber-50 mx-6 mt-4 rounded-lg px-4 py-3 flex-shrink-0 border border-amber-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <span className="text-sm text-amber-800">
+                    有 <span className="font-medium">{newStrategies.length + updatedStrategies.size + deletedStrategyIds.size}</span> 项策略变更，变更的信息需要发布后才能生效
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowHistoryModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-amber-700 hover:text-amber-800 hover:bg-amber-100 rounded-lg transition-colors"
+                  >
+                    <History className="w-4 h-4" />
+                    查看历史版本
+                  </button>
+                  <button
+                    onClick={() => {
+                      // 如果有定时发布信息，回显数据
+                      if (scheduledPublish) {
+                        setScheduledDate(scheduledPublish.scheduledDate);
+                        setScheduledTime(scheduledPublish.scheduledTime);
+                        setReleaseNotes(scheduledPublish.description || '');
+                        setPublishType('scheduled');
+                      }
+                      setShowPublishModal(true);
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium"
+                  >
+                    发布
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 text-xs text-gray-500 mx-6 mb-4 pl-1">
+              <Info className="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0" />
+              <span>信息发布将影响线上用户的实际使用，发布时，建议避开用户高频使用的时间段</span>
+            </div>
+          </>
+        )}
+
+        {/* 第三行：筛选栏（独立模块） */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mx-6 mt-4 p-4 flex-shrink-0">
+          <div className="flex items-center gap-4 flex-wrap">
+            {/* 学段 */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">学段：</label>
+              <select
+                value={selectedPhase}
+                onChange={(e) => {
+                  setSelectedPhase(e.target.value);
+                  setSelectedGrade('all'); // 切换学段时重置年级
+                }}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {phaseOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 学科 */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">学科：</label>
+              <select
+                value={selectedSubject}
+                onChange={(e) => setSelectedSubject(e.target.value)}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {subjectOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 年级 */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">年级：</label>
+              <select
+                value={selectedGrade}
+                onChange={(e) => setSelectedGrade(e.target.value)}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {gradeOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 场景 */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">场景：</label>
+              <select
+                value={selectedScene}
+                onChange={(e) => setSelectedScene(e.target.value as SceneFilterType)}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {sceneOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* 内容区域 - 按场景分组展示 */}
+        <div className="flex-1 overflow-auto bg-gray-50 p-6">
+          <div className="space-y-6">
+            {displayScenes.map((sceneType) => (
+              <SceneGroup
+                key={sceneType}
+                sceneType={sceneType}
+                strategies={groupedStrategies[sceneType]}
+                onAddNew={() => handleAddNew(sceneType)}
+              />
+            ))}
+
+            {/* 无数据提示 */}
+            {filteredStrategies.length === 0 && (
+              <div className="text-center py-12">
+                <p className="text-gray-500">暂无符合条件的策略</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 发布弹窗 */}
+      {showPublishModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">发布新版本</h3>
+              <button
+                onClick={() => setShowPublishModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* 发布提示 */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4">
+              <div className="flex items-start gap-2">
+                <svg className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div className="text-sm">
+                  <p className="text-amber-800 font-medium">发布注意事项</p>
+                  <p className="text-amber-700 mt-1">发布将影响线上用户的实际使用，建议避开用户高频使用的时间段。</p>
+                  <p className="text-gray-500 mt-1 text-xs">建议发布时段：凌晨 00:00 - 04:00</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* 新版本号 */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">版本号</label>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
+                {scheduledPublish?.version || generateNewVersion()}
+              </div>
+            </div>
+            
+            {/* 更新说明 */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                更新说明 <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={releaseNotes}
+                onChange={(e) => setReleaseNotes(e.target.value)}
+                placeholder="请填写本次更新的主要内容..."
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+              />
+            </div>
+
+            {/* 发布时间 */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">发布时间</label>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="publishType"
+                    checked={publishType === 'immediate'}
+                    onChange={() => setPublishType('immediate')}
+                    className="w-4 h-4 text-emerald-600"
+                  />
+                  <span className="text-sm text-gray-700">立即发布</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="publishType"
+                    checked={publishType === 'scheduled'}
+                    onChange={() => setPublishType('scheduled')}
+                    className="w-4 h-4 text-emerald-600"
+                  />
+                  <span className="text-sm text-gray-700">定时发布</span>
+                </label>
+                {publishType === 'scheduled' && (
+                  <div className="ml-6 flex items-center gap-3">
+                    <input
+                      type="date"
+                      value={scheduledDate}
+                      onChange={(e) => setScheduledDate(e.target.value)}
+                      className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <input
+                      type="time"
+                      value={scheduledTime}
+                      onChange={(e) => setScheduledTime(e.target.value)}
+                      className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* 本次更新内容 */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">本次更新内容</label>
+              <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 space-y-2 max-h-48 overflow-y-auto">
+                {newStrategies.length > 0 && (
+                  <div>
+                    <div className="text-xs font-medium text-emerald-600 mb-1">新增策略</div>
+                    {newStrategies.map(s => (
+                      <div key={s.id} className="text-sm text-gray-600 pl-2 py-0.5">
+                        · {s.name}（{sceneGroupNames[s.scene]}）
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {updatedStrategies.size > 0 && (
+                  <div>
+                    <div className="text-xs font-medium text-amber-600 mb-1">更新策略</div>
+                    {Array.from(updatedStrategies.entries()).map(([id, update]) => {
+                      const original = mockStrategies.find(s => s.id === id);
+                      return (
+                        <div key={id} className="text-sm text-gray-600 pl-2 py-0.5">
+                          · {update.name || original?.name}（{sceneGroupNames[update.scene || original?.scene || 'sync']}）
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {deletedStrategyIds.size > 0 && (
+                  <div>
+                    <div className="text-xs font-medium text-red-600 mb-1">删除策略</div>
+                    {Array.from(deletedStrategyIds).map(id => {
+                      const original = mockStrategies.find(s => s.id === id);
+                      return (
+                        <div key={id} className="text-sm text-gray-600 pl-2 py-0.5">
+                          · {original?.name}（{original ? sceneGroupNames[original.scene] : ''}）
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* 操作按钮 */}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowPublishModal(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+              >
+                取消
+              </button>
+              <button
+                onClick={handlePublish}
+                disabled={!releaseNotes.trim()}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {publishType === 'immediate' ? '确认发布' : '确认定时发布'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 历史版本弹窗 */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">版本历史</h3>
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {versionHistory.map((version, index) => (
+                <div key={version.version} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900">{version.version}</span>
+                      {index === 0 && (
+                        <span className="px-2 py-0.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-full border border-emerald-200">
+                          当前版本
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-sm text-gray-500">{version.releaseDate}</span>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-2">{version.releaseNotes}</p>
+                  <p className="text-xs text-gray-400 mb-2">发布人：{version.publisher || '-'}（账号：{version.publisherAccount || '-'}）</p>
+                  {version.changes.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-gray-100">
+                      <div className="text-xs text-gray-500 mb-1">变更明细：</div>
+                      <div className="space-y-1">
+                        {version.changes.map((change, i) => (
+                          <div key={i} className="text-xs text-gray-600">
+                            <span className={`inline-block w-12 ${
+                              change.type === 'add' ? 'text-emerald-600' :
+                              change.type === 'update' ? 'text-amber-600' : 'text-red-600'
+                            }`}>
+                              {change.type === 'add' ? '新增' : change.type === 'update' ? '更新' : '删除'}
+                            </span>
+                            {change.strategyName}（{change.scene}）
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </PageLayout>
+  );
+}
+
+
+=== FILE: src/app/adaptive-strategy/strategy/mastery/page.tsx ===
+'use client';
+
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  ArrowLeft,
+  BarChart3,
+  Save,
+  History,
+  AlertTriangle,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Edit2,
+  Clock,
+  Info,
+  GraduationCap,
+} from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import PageLayout from '@/components/shared/PageLayout';
+
+// 学段类型
+type PhaseType = 'high' | 'middle' | 'primary';
+
+// 学段配置
+const phaseConfig: Record<PhaseType, { label: string; icon: React.ReactNode }> = {
+  high: { label: '高中', icon: <GraduationCap className="w-4 h-4" /> },
+  middle: { label: '初中', icon: <GraduationCap className="w-4 h-4" /> },
+  primary: { label: '小学', icon: <GraduationCap className="w-4 h-4" /> },
+};
+
+// 学段顺序
+const phaseOrder: PhaseType[] = ['high', 'middle', 'primary'];
+
+// 掌握度等级配置类型
+interface MasteryLevel {
+  id: string;
+  name: string;
+  color: string;
+  colorBg: string;
+  min: number;
+  max: number;
+}
+
+// 变更记录类型
+interface ChangeRecord {
+  type: 'modify';
+  target: string;
+  detail: string;
+  oldValue: { min: number; max: number };
+  newValue: { min: number; max: number };
+  phase?: PhaseType;
+}
+
+// 发布记录类型
+interface PublishRecord {
+  version: string;
+  description: string;
+  publishTime: string;
+  publisher: string;
+  publisherAccount?: string;
+  changes: ChangeRecord[];
+  config: Record<PhaseType, MasteryLevel[]>;
+}
+
+// 单个学段的页面状态
+interface PhasePageState {
+  status: 'published' | 'pending';
+  currentVersion: string;
+  lastPublishTime: string;
+  lastPublisher: string;
+  publishHistory: PublishRecord[];
+  pendingChanges: ChangeRecord[];
+  scheduledPublish?: {
+    version: string;
+    scheduledDate: string;
+    scheduledTime: string;
+    description: string;
+    changes: ChangeRecord[]; // 保存变更内容，用于取消定时后恢复
+  };
+  // 取消定时发布后保存的信息，用于下次发布时回显
+  canceledScheduledInfo?: {
+    version: string;
+    scheduledDate: string;
+    scheduledTime: string;
+    description: string;
+  };
+}
+
+// 整体页面状态
+interface MasteryPageStateAll {
+  configs: Record<PhaseType, { masteryLevels: MasteryLevel[]; originalLevels: MasteryLevel[]; pageState: PhasePageState }>;
+}
+
+// 默认掌握度等级配置
+const defaultMasteryLevels: MasteryLevel[] = [
+  { id: 'excellent', name: '优秀', color: 'text-emerald-600', colorBg: 'bg-emerald-500', min: 76, max: 100 },
+  { id: 'good', name: '良好', color: 'text-blue-600', colorBg: 'bg-blue-500', min: 51, max: 75 },
+  { id: 'average', name: '一般', color: 'text-orange-600', colorBg: 'bg-orange-500', min: 26, max: 50 },
+  { id: 'weak', name: '较弱', color: 'text-red-600', colorBg: 'bg-red-500', min: 0, max: 25 },
+];
+
+// 初始化单个学段的状态
+const createInitialPhaseState = (): PhasePageState => ({
+  status: 'published',
+  currentVersion: 'v1.0.0',
+  lastPublishTime: '2024-01-15 14:30',
+  lastPublisher: '管理员',
+  publishHistory: [
+    {
+      version: 'v1.0.0',
+      description: '初始版本，定义掌握程度划分标准',
+      publishTime: '2024-01-15 14:30',
+      publisher: '管理员',
+      publisherAccount: '000001',
+      changes: [],
+      config: {
+        high: JSON.parse(JSON.stringify(defaultMasteryLevels)),
+        middle: JSON.parse(JSON.stringify(defaultMasteryLevels)),
+        primary: JSON.parse(JSON.stringify(defaultMasteryLevels)),
+      },
+    },
+  ],
+  pendingChanges: [],
+});
+
+// 初始化整体页面状态
+const initialPageStateAll: MasteryPageStateAll = {
+  configs: {
+    high: { masteryLevels: JSON.parse(JSON.stringify(defaultMasteryLevels)), originalLevels: JSON.parse(JSON.stringify(defaultMasteryLevels)), pageState: createInitialPhaseState() },
+    middle: { masteryLevels: JSON.parse(JSON.stringify(defaultMasteryLevels)), originalLevels: JSON.parse(JSON.stringify(defaultMasteryLevels)), pageState: createInitialPhaseState() },
+    primary: { masteryLevels: JSON.parse(JSON.stringify(defaultMasteryLevels)), originalLevels: JSON.parse(JSON.stringify(defaultMasteryLevels)), pageState: createInitialPhaseState() },
+  },
+};
+
+// 获取当前用户名（模拟）
+const getCurrentUserName = (): string => '管理员';
+
+// 发布弹窗组件
+function PublishModal({
+  isOpen,
+  onClose,
+  onPublish,
+  currentVersion,
+  allPendingChanges,
+  scheduledPublish,
+  isScheduledState = false,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onPublish: (version: string, description: string, scheduledInfo?: { scheduledDate: string; scheduledTime: string }) => void;
+  currentVersion: string;
+  allPendingChanges: ChangeRecord[];
+  scheduledPublish?: { version: string; scheduledDate: string; scheduledTime: string; description: string };
+  isScheduledState?: boolean; // 是否处于定时发布状态
+}) {
+  const [description, setDescription] = useState('');
+  const [publishType, setPublishType] = useState<'immediate' | 'scheduled'>('immediate');
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('02:00');
+
+  useEffect(() => {
+    if (isOpen && scheduledPublish) {
+      // 回显之前填写的信息
+      setDescription(scheduledPublish.description);
+      setScheduledDate(scheduledPublish.scheduledDate);
+      setScheduledTime(scheduledPublish.scheduledTime);
+      // 只有处于定时发布状态时才默认选择"定时发布"
+      setPublishType(isScheduledState ? 'scheduled' : 'immediate');
+    } else if (isOpen) {
+      setDescription('');
+      setPublishType('immediate');
+      setScheduledDate('');
+      setScheduledTime('02:00');
+    }
+  }, [isOpen, scheduledPublish, isScheduledState]);
+
+  const generateNewVersion = (version: string): string => {
+    const parts = version.replace('v', '').split('.');
+    const major = parseInt(parts[0]) || 1;
+    const minor = parseInt(parts[1]) || 0;
+    const patch = (parseInt(parts[2]) || 0) + 1;
+    return `v${major}.${minor}.${patch}`;
+  };
+
+  const newVersion = scheduledPublish?.version || generateNewVersion(currentVersion);
+
+  const handlePublish = () => {
+    if (!description.trim()) return;
+    if (publishType === 'scheduled') {
+      onPublish(newVersion, description.trim(), { scheduledDate, scheduledTime });
+    } else {
+      onPublish(newVersion, description.trim());
+    }
+    setDescription('');
+    setPublishType('immediate');
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  const changesByPhase: Record<PhaseType, ChangeRecord[]> = {
+    high: allPendingChanges.filter(c => c.phase === 'high'),
+    middle: allPendingChanges.filter(c => c.phase === 'middle'),
+    primary: allPendingChanges.filter(c => c.phase === 'primary'),
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white rounded-t-2xl sm:rounded-lg shadow-xl w-full sm:w-[600px] max-h-[90vh] flex flex-col">
+        {/* 固定头部 */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
+          <h3 className="text-base font-semibold text-gray-900">发布确认</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5 text-gray-500" /></button>
+        </div>
+
+        {/* 可滚动内容区 */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="text-amber-800 font-medium">发布注意事项</p>
+                <p className="text-amber-700 mt-1">发布将影响线上用户的实际使用，建议避开用户高频使用的时间段。</p>
+                <p className="text-gray-500 mt-1 text-xs">建议发布时段：凌晨 00:00 - 04:00</p>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">版本号</label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">当前版本：</span>
+              <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-sm font-mono">{currentVersion}</span>
+              <span className="text-gray-400">→</span>
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-sm font-mono font-medium">{newVersion}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">更新说明 <span className="text-red-500">*</span></label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="请输入本次发布的更新说明..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+              rows={3}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">发布时间</label>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="publishType" checked={publishType === 'immediate'} onChange={() => setPublishType('immediate')} className="w-4 h-4 text-emerald-600" />
+                <span className="text-sm text-gray-700">立即发布</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="publishType" checked={publishType === 'scheduled'} onChange={() => setPublishType('scheduled')} className="w-4 h-4 text-emerald-600" />
+                <span className="text-sm text-gray-700">定时发布</span>
+              </label>
+              {publishType === 'scheduled' && (
+                <div className="ml-6 flex items-center gap-3">
+                  <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  <input type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">本次变更内容（共 {allPendingChanges.length} 项）</label>
+            <div className="bg-gray-50 rounded-lg p-3">
+              {phaseOrder.map(phase => (
+                changesByPhase[phase].length > 0 && (
+                  <div key={phase} className="mb-3 last:mb-0">
+                    <div className="text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1">
+                      {phaseConfig[phase].icon}
+                      <span>{phaseConfig[phase].label}</span>
+                    </div>
+                    {changesByPhase[phase].map((change, index) => (
+                      <div key={index} className="flex items-start gap-2 py-1 ml-5">
+                        <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium shrink-0">修改</span>
+                        <span className="text-sm text-gray-700">{change.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 固定底部按钮 */}
+        <div className="flex justify-end gap-3 px-5 py-4 border-t border-gray-200 bg-white flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm">取消</button>
+          <button onClick={handlePublish} disabled={!description.trim()} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+            {publishType === 'immediate' ? '确认发布' : '确认定时发布'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 历史版本弹窗组件
+function HistoryModal({
+  isOpen,
+  onClose,
+  history,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  history: PublishRecord[];
+}) {
+  const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set());
+
+  const toggleVersion = (version: string) => {
+    setExpandedVersions((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(version)) newSet.delete(version);
+      else newSet.add(version);
+      return newSet;
+    });
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white rounded-t-2xl sm:rounded-lg shadow-xl w-full sm:w-[700px] max-h-[90vh] flex flex-col">
+        {/* 固定头部 */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
+          <h3 className="text-base font-semibold text-gray-900">发布历史</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5 text-gray-500" /></button>
+        </div>
+
+        {/* 可滚动内容区 */}
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="space-y-3">
+            {history.map((record) => (
+              <div key={record.version} className="border border-gray-200 rounded-lg overflow-hidden">
+                <button onClick={() => toggleVersion(record.version)} className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-sm font-mono font-medium">{record.version}</span>
+                    <span className="text-xs text-gray-500">{record.publishTime}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">发布人：{record.publisher}（账号：{record.publisherAccount || '-'}）</span>
+                    {expandedVersions.has(record.version) ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                  </div>
+                </button>
+
+                {expandedVersions.has(record.version) && (
+                  <div className="px-4 py-3 border-t border-gray-100">
+                    <div className="mb-3"><p className="text-sm text-gray-600">{record.description}</p></div>
+
+                    <div className="space-y-3">
+                      {phaseOrder.map(phase => (
+                        <div key={phase} className="bg-gray-50 rounded-lg p-3">
+                          <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+                            {phaseConfig[phase].icon}
+                            <span>{phaseConfig[phase].label}</span>
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {record.config[phase].map((level) => (
+                              <div key={level.id} className="flex items-center gap-2">
+                                <div className={`w-2.5 h-2.5 rounded-full ${level.colorBg}`}></div>
+                                <span className="text-sm text-gray-700">{level.name}：</span>
+                                <span className="text-sm text-gray-600 font-medium">{level.min}% - {level.max}%</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {record.changes.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-xs font-medium text-gray-500 mb-2">变更记录：</p>
+                        <div className="space-y-1">
+                          {record.changes.map((change, index) => (
+                            <div key={index} className="flex items-center gap-2 text-sm">
+                              {change.phase && <span className="text-xs text-gray-400">[{phaseConfig[change.phase].label}]</span>}
+                              <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">修改</span>
+                              <span className="text-gray-600">{change.detail}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 固定底部按钮 */}
+        <div className="flex justify-end px-5 py-4 border-t border-gray-200 bg-white flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm">关闭</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function MasteryLevelPage() {
+  const router = useRouter();
+  const [isEditing, setIsEditing] = useState(false);
+  const [pageStateAll, setPageStateAll] = useState<MasteryPageStateAll>(initialPageStateAll);
+  const [editBackupAll, setEditBackupAll] = useState<Record<PhaseType, MasteryLevel[]>>({
+    high: [],
+    middle: [],
+    primary: [],
+  });
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // 获取任一学段的状态信息（版本号等是统一的）
+  const currentPageState = pageStateAll.configs.high.pageState;
+
+  const allPendingChanges = useMemo(() => {
+    const changes: ChangeRecord[] = [];
+    phaseOrder.forEach(phase => {
+      changes.push(...pageStateAll.configs[phase].pageState.pendingChanges.map(c => ({ ...c, phase })));
+    });
+    return changes;
+  }, [pageStateAll]);
+
+  const totalPendingCount = allPendingChanges.length;
+
+  const hasScheduledPublish = phaseOrder.some(
+    phase => pageStateAll.configs[phase].pageState.scheduledPublish && pageStateAll.configs[phase].pageState.pendingChanges.length === 0
+  );
+
+  // 获取定时发布信息或取消的定时发布信息（用于回显）
+  const scheduledPublishInfo = useMemo(() => {
+    // 优先返回定时发布信息
+    for (const phase of phaseOrder) {
+      const sp = pageStateAll.configs[phase].pageState.scheduledPublish;
+      if (sp) return sp;
+    }
+    // 如果没有定时发布，检查是否有取消的定时发布信息
+    for (const phase of phaseOrder) {
+      const csi = pageStateAll.configs[phase].pageState.canceledScheduledInfo;
+      if (csi) return csi;
+    }
+    return undefined;
+  }, [pageStateAll]);
+
+  // 取消定时发布
+  const handleCancelScheduled = () => {
+    setPageStateAll(prev => {
+      const newConfigs = { ...prev.configs };
+      phaseOrder.forEach(phase => {
+        const sp = prev.configs[phase].pageState.scheduledPublish;
+        if (sp) {
+          // 恢复待发布状态，恢复变更内容
+          newConfigs[phase] = {
+            ...newConfigs[phase],
+            pageState: {
+              ...newConfigs[phase].pageState,
+              status: 'pending',
+              pendingChanges: sp.changes, // 恢复变更内容
+              scheduledPublish: undefined,
+              // 保存取消的定时发布信息，用于下次发布时回显
+              canceledScheduledInfo: {
+                version: sp.version,
+                scheduledDate: sp.scheduledDate,
+                scheduledTime: sp.scheduledTime,
+                description: sp.description,
+              },
+            },
+          };
+        }
+      });
+      return { ...prev, configs: newConfigs };
+    });
+  };
+
+  const handleStartEdit = () => {
+    // 备份所有学段的当前配置
+    setEditBackupAll({
+      high: JSON.parse(JSON.stringify(pageStateAll.configs.high.masteryLevels)),
+      middle: JSON.parse(JSON.stringify(pageStateAll.configs.middle.masteryLevels)),
+      primary: JSON.parse(JSON.stringify(pageStateAll.configs.primary.masteryLevels)),
+    });
+    setIsEditing(true);
+    setHasUnsavedChanges(false);
+  };
+
+  const handleCancelEdit = () => {
+    // 恢复所有学段的备份配置
+    setPageStateAll(prev => ({
+      ...prev,
+      configs: {
+        high: { ...prev.configs.high, masteryLevels: JSON.parse(JSON.stringify(editBackupAll.high)) },
+        middle: { ...prev.configs.middle, masteryLevels: JSON.parse(JSON.stringify(editBackupAll.middle)) },
+        primary: { ...prev.configs.primary, masteryLevels: JSON.parse(JSON.stringify(editBackupAll.primary)) },
+      },
+    }));
+    setIsEditing(false);
+    setHasUnsavedChanges(false);
+  };
+
+  const handleRangeChange = (phase: PhaseType, id: string, field: 'min' | 'max', value: number) => {
+    if (!isEditing) return;
+    const clampedValue = Math.max(0, Math.min(100, value));
+
+    setPageStateAll(prev => {
+      const newLevels = prev.configs[phase].masteryLevels.map((level) => {
+        if (level.id !== id) return level;
+        const newMin = field === 'min' ? clampedValue : level.min;
+        const newMax = field === 'max' ? clampedValue : level.max;
+        return { ...level, min: newMin, max: newMax };
+      });
+
+      const index = newLevels.findIndex((l) => l.id === id);
+      if (field === 'max' && index > 0) {
+        const prevLevel = newLevels[index - 1];
+        if (prevLevel) prevLevel.min = clampedValue + 1;
+      }
+      if (field === 'min' && index < newLevels.length - 1) {
+        const nextLevel = newLevels[index + 1];
+        if (nextLevel) nextLevel.max = clampedValue - 1;
+      }
+
+      return {
+        ...prev,
+        configs: {
+          ...prev.configs,
+          [phase]: { ...prev.configs[phase], masteryLevels: newLevels },
+        },
+      };
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const detectChanges = (newLevels: MasteryLevel[], oldLevels: MasteryLevel[], phase: PhaseType): ChangeRecord[] => {
+    const changes: ChangeRecord[] = [];
+    newLevels.forEach((newLevel) => {
+      const oldLevel = oldLevels.find((l) => l.id === newLevel.id);
+      if (oldLevel && (oldLevel.min !== newLevel.min || oldLevel.max !== newLevel.max)) {
+        changes.push({
+          type: 'modify',
+          target: newLevel.name,
+          detail: `${newLevel.name}：区间从 ${oldLevel.min}-${oldLevel.max} 修改为 ${newLevel.min}-${newLevel.max}`,
+          oldValue: { min: oldLevel.min, max: oldLevel.max },
+          newValue: { min: newLevel.min, max: newLevel.max },
+          phase: phase,
+        });
+      }
+    });
+    return changes;
+  };
+
+  const handleSave = () => {
+    // 检测所有学段的变更
+    let totalChanges = 0;
+    const newConfigs = { ...pageStateAll.configs };
+
+    phaseOrder.forEach(phase => {
+      const changes = detectChanges(
+        pageStateAll.configs[phase].masteryLevels,
+        editBackupAll[phase],
+        phase
+      );
+      totalChanges += changes.length;
+
+      if (changes.length > 0) {
+        newConfigs[phase] = {
+          masteryLevels: pageStateAll.configs[phase].masteryLevels,
+          originalLevels: JSON.parse(JSON.stringify(pageStateAll.configs[phase].masteryLevels)),
+          pageState: {
+            ...pageStateAll.configs[phase].pageState,
+            status: 'pending',
+            pendingChanges: [...pageStateAll.configs[phase].pageState.pendingChanges, ...changes],
+          },
+        };
+      }
+    });
+
+    if (totalChanges === 0) {
+      return;
+    }
+
+    setPageStateAll(prev => ({
+      ...prev,
+      configs: newConfigs,
+    }));
+
+    setHasUnsavedChanges(false);
+    setIsEditing(false);
+  };
+
+  const handlePublish = (version: string, description: string, scheduledInfo?: { scheduledDate: string; scheduledTime: string }) => {
+    if (scheduledInfo) {
+      setPageStateAll(prev => {
+        const newConfigs = { ...prev.configs };
+        phaseOrder.forEach(phase => {
+          const currentPendingChanges = newConfigs[phase].pageState.pendingChanges;
+          if (currentPendingChanges.length > 0) {
+            newConfigs[phase] = {
+              ...newConfigs[phase],
+              pageState: {
+                ...newConfigs[phase].pageState,
+                status: 'pending',
+                pendingChanges: [],
+                scheduledPublish: { 
+                  version, 
+                  scheduledDate: scheduledInfo.scheduledDate, 
+                  scheduledTime: scheduledInfo.scheduledTime, 
+                  description,
+                  changes: currentPendingChanges, // 保存变更内容
+                },
+              },
+            };
+          }
+        });
+        return { ...prev, configs: newConfigs };
+      });
+    } else {
+      const currentTime = new Date().toLocaleString('zh-CN', {
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+      }).replace(/\//g, '-');
+      const publisherAccount = String(Math.floor(100000 + Math.random() * 900000));
+
+      const allConfigs: Record<PhaseType, MasteryLevel[]> = {
+        high: JSON.parse(JSON.stringify(pageStateAll.configs.high.masteryLevels)),
+        middle: JSON.parse(JSON.stringify(pageStateAll.configs.middle.masteryLevels)),
+        primary: JSON.parse(JSON.stringify(pageStateAll.configs.primary.masteryLevels)),
+      };
+
+      const newRecord: PublishRecord = {
+        version,
+        description,
+        publishTime: currentTime,
+        publisher: getCurrentUserName(),
+        publisherAccount,
+        changes: allPendingChanges,
+        config: allConfigs,
+      };
+
+      setPageStateAll(prev => {
+        const newConfigs = { ...prev.configs };
+        phaseOrder.forEach(phase => {
+          newConfigs[phase] = {
+            ...newConfigs[phase],
+            pageState: {
+              ...newConfigs[phase].pageState,
+              status: 'published',
+              currentVersion: version,
+              lastPublishTime: currentTime,
+              lastPublisher: getCurrentUserName(),
+              publishHistory: [newRecord, ...newConfigs[phase].pageState.publishHistory],
+              pendingChanges: [],
+              scheduledPublish: undefined,
+            },
+          };
+        });
+        return { ...prev, configs: newConfigs };
+      });
+    }
+  };
+
+  const handleCancel = () => {
+    router.push('/adaptive-strategy');
+  };
+
+  // 渲染单个学段的配置表格
+  const renderPhaseBlock = (phase: PhaseType) => {
+    const levels = pageStateAll.configs[phase].masteryLevels;
+    const pendingCount = pageStateAll.configs[phase].pageState.pendingChanges.length;
+
+    return (
+      <div key={phase} className="border border-gray-200 rounded-lg overflow-hidden">
+        {/* 学段标题 */}
+        <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-1 h-4 bg-emerald-500 rounded-full"></div>
+            {phaseConfig[phase].icon}
+            <span className="font-medium text-gray-800">{phaseConfig[phase].label}</span>
+          </div>
+          {pendingCount > 0 && (
+            <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full">
+              {pendingCount} 项待发布
+            </span>
+          )}
+        </div>
+
+        {/* 表格内容 */}
+        <div className="p-4">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="text-left py-2 text-sm font-medium text-gray-600 w-32">掌握度等级</th>
+                <th className="text-left py-2 text-sm font-medium text-gray-600 w-32">颜色标识</th>
+                <th className="text-left py-2 text-sm font-medium text-gray-600">区间范围</th>
+              </tr>
+            </thead>
+            <tbody>
+              {levels.map((level) => (
+                <tr key={level.id} className="border-b border-gray-100 last:border-0">
+                  <td className="py-3">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full ${level.colorBg}`}></div>
+                      <span className={`font-medium ${level.color}`}>{level.name}</span>
+                    </div>
+                  </td>
+                  <td className="py-3">
+                    <div className={`w-8 h-8 rounded-lg ${level.colorBg} shadow-sm`}></div>
+                  </td>
+                  <td className="py-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={level.min}
+                        onChange={(e) => handleRangeChange(phase, level.id, 'min', parseInt(e.target.value) || 0)}
+                        min={0}
+                        max={100}
+                        disabled={!isEditing}
+                        className={`w-16 px-3 py-2 border rounded-lg text-center text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                          isEditing ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed'
+                        }`}
+                      />
+                      <span className="text-gray-500 text-sm">% -</span>
+                      <input
+                        type="number"
+                        value={level.max}
+                        onChange={(e) => handleRangeChange(phase, level.id, 'max', parseInt(e.target.value) || 0)}
+                        min={0}
+                        max={100}
+                        disabled={!isEditing}
+                        className={`w-16 px-3 py-2 border rounded-lg text-center text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                          isEditing ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed'
+                        }`}
+                      />
+                      <span className="text-gray-500 text-sm">%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <PageLayout
+      activeMenuId="adaptive-strategy"
+      breadcrumbs={[
+        { label: '自适应学习策略' },
+        { label: '策略广场' },
+        { label: '掌握程度划分', isLast: true },
+      ]}
+    >
+      <div className="flex flex-col h-full bg-gray-50">
+        {/* 页面头部 - 纯信息展示 */}
+        <div className="bg-white px-6 py-4 flex-shrink-0 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button onClick={handleCancel} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm">
+                <ArrowLeft className="w-4 h-4" />
+                <span>返回</span>
+              </button>
+              <div className="h-5 w-px bg-gray-300"></div>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center">
+                <BarChart3 className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">掌握程度划分</h2>
+                <p className="text-sm text-gray-500">定义知识点掌握程度的等级划分标准</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-start gap-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500 whitespace-nowrap">版本：</span>
+                <span className="px-2 py-0.5 text-xs font-medium text-gray-600 bg-gray-100 rounded border border-gray-200">
+                  {currentPageState.currentVersion}
+                </span>
+                <button onClick={() => setShowHistoryModal(true)} className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors" title="查看历史版本">
+                  <History className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500 whitespace-nowrap">状态：</span>
+                <span className="px-2 py-0.5 text-xs font-medium rounded-full border text-emerald-700 bg-emerald-50 border-emerald-200">
+                  已发布
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 内容区域 */}
+        <div className="flex-1 overflow-auto p-6">
+          {/* 全局发布提示条 */}
+          {totalPendingCount > 0 && (
+            <div className="mb-4">
+              <div className="bg-amber-50 px-5 py-3 rounded-lg border border-amber-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    <span className="text-sm text-amber-800">
+                      有 <span className="font-medium">{totalPendingCount}</span> 项变更待发布，发布后才能生效
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShowHistoryModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-amber-700 hover:text-amber-800 hover:bg-amber-100 rounded-lg transition-colors">
+                      <History className="w-4 h-4" />
+                      <span>查看历史版本</span>
+                    </button>
+                    <button onClick={() => setShowPublishModal(true)} className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium">
+                      <span>发布</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 text-xs text-gray-500 mt-2">
+                <Info className="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0" />
+                <span>信息发布将影响线上用户的实际使用，发布时，建议避开用户高频使用的时间段</span>
+              </div>
+            </div>
+          )}
+
+          {/* 定时发布状态 */}
+          {hasScheduledPublish && totalPendingCount === 0 && (
+            <div className="mb-4">
+              <div className="bg-blue-50 px-5 py-3 rounded-lg border border-blue-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm text-blue-800">
+                      有定时发布任务，将在设定时间自动发布
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShowHistoryModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-700 hover:text-blue-800 hover:bg-blue-100 rounded-lg transition-colors">
+                      <History className="w-4 h-4" />
+                      <span>查看历史版本</span>
+                    </button>
+                    <button onClick={handleCancelScheduled} className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium">
+                      <span>取消定时</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 配置卡片 */}
+          <div className="bg-white rounded-lg border border-gray-200">
+            {/* 卡片头部 */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">掌握程度区间配置</h3>
+                <p className="text-sm text-gray-500 mt-0.5">统一配置高中、初中、小学各掌握等级的区间范围与颜色标识</p>
+              </div>
+              <div className="flex items-center gap-3">
+                {isEditing ? (
+                  <>
+                    <button onClick={handleCancelEdit} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm">取消</button>
+                    <button onClick={handleSave} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 text-sm">
+                      <Save className="w-4 h-4" />
+                      <span>保存</span>
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={handleStartEdit} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 text-sm">
+                    <Edit2 className="w-4 h-4" />
+                    <span>编辑</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 卡片内容：三个学段纵向分组 */}
+            <div className="p-5 space-y-4">
+              {phaseOrder.map(phase => renderPhaseBlock(phase))}
+
+              {/* 提示文字 */}
+              <div className="p-3 bg-gray-50 rounded-lg">
+                {isEditing ? (
+                  <p className="text-xs text-gray-500">说明：修改区间范围时，系统会自动调整相邻区间的边界值，确保区间连续且覆盖 0%-100%。保存时将保存所有学段的变更。</p>
+                ) : (
+                  <p className="text-xs text-gray-500">提示：点击右上角"编辑"按钮可同时编辑所有学段的掌握度区间配置。</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <PublishModal
+        isOpen={showPublishModal}
+        onClose={() => setShowPublishModal(false)}
+        onPublish={handlePublish}
+        currentVersion={currentPageState.currentVersion}
+        allPendingChanges={allPendingChanges}
+        scheduledPublish={scheduledPublishInfo}
+        isScheduledState={hasScheduledPublish}
+      />
+
+      <HistoryModal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        history={currentPageState.publishHistory}
+      />
+    </PageLayout>
+  );
+}
+
+
+=== FILE: src/app/api/init-data/route.ts ===
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
+
+// POST /api/init-data - 初始化测试数据
+export async function POST(request: NextRequest) {
+  try {
+    const client = getSupabaseClient();
+
+    // 检查是否已有数据
+    const { data: existingTextbooks } = await client
+      .from('textbooks')
+      .select('id')
+      .limit(1);
+
+    if (existingTextbooks && existingTextbooks.length > 0) {
+      return NextResponse.json({
+        message: '数据已存在，跳过初始化',
+        existing: true,
+      });
+    }
+
+    // 创建测试教材
+    const { data: textbook1, error: error1 } = await client
+      .from('textbooks')
+      .insert({
+        name: '高中数学·必修一',
+        subject: '数学',
+        phase: '高中',
+        grade: '高一',
+        publisher: '人教版',
+        version: '2024版',
+        year: '2024',
+        region: '全国',
+        chapter_count: 2,
+        knowledge_point_count: 4,
+        school_count: 2,
+        has_unpublished_changes: false,
+        current_version: 'v1.0.0',
+        last_publish_time: '2024-01-10 09:00:00',
+        last_publisher: '管理员',
+      })
+      .select()
+      .single();
+
+    if (error1) {
+      return NextResponse.json({ error: error1.message }, { status: 500 });
+    }
+
+    // 创建第二个教材
+    const { data: textbook2, error: error2 } = await client
+      .from('textbooks')
+      .insert({
+        name: '高中数学·必修二',
+        subject: '数学',
+        phase: '高中',
+        grade: '高二',
+        publisher: '人教版',
+        version: '2024版',
+        year: '2024',
+        region: '全国',
+        chapter_count: 1,
+        knowledge_point_count: 2,
+        school_count: 1,
+        has_unpublished_changes: false,
+        current_version: 'v1.0.0',
+        last_publish_time: '2024-01-10 10:00:00',
+        last_publisher: '李老师',
+      })
+      .select()
+      .single();
+
+    if (error2) {
+      return NextResponse.json({ error: error2.message }, { status: 500 });
+    }
+
+    // 为教材1创建章节
+    const chapters1 = [
+      {
+        textbook_id: textbook1.id,
+        name: '第一章 集合与常用逻辑用语',
+        level: 'chapter',
+        order: 1,
+        expanded: true,
+        knowledge_points: JSON.stringify([
+          { id: 'kp1', name: '集合的概念', extendedPoints: [] },
+          { id: 'kp2', name: '集合间的基本关系', extendedPoints: [] },
+        ]),
+      },
+      {
+        textbook_id: textbook1.id,
+        name: '1.1 集合的概念',
+        level: 'section',
+        order: 1,
+        parent_id: null, // 需要后续更新
+        expanded: false,
+        knowledge_points: JSON.stringify([
+          { id: 'kp1', name: '集合的概念', extendedPoints: [] },
+        ]),
+      },
+      {
+        textbook_id: textbook1.id,
+        name: '第二章 函数概念与基本初等函数',
+        level: 'chapter',
+        order: 2,
+        expanded: false,
+        knowledge_points: JSON.stringify([
+          { id: 'kp3', name: '函数的概念', extendedPoints: [] },
+          { id: 'kp4', name: '函数的基本性质', extendedPoints: [] },
+        ]),
+      },
+    ];
+
+    const { data: insertedChapters1, error: chapterError1 } = await client
+      .from('textbook_chapters')
+      .insert(chapters1)
+      .select();
+
+    if (chapterError1) {
+      return NextResponse.json({ error: chapterError1.message }, { status: 500 });
+    }
+
+    // 更新子章节的 parent_id
+    if (insertedChapters1 && insertedChapters1.length >= 2) {
+      const parentChapter = insertedChapters1[0];
+      const childSection = insertedChapters1[1];
+      
+      await client
+        .from('textbook_chapters')
+        .update({ parent_id: parentChapter.id })
+        .eq('id', childSection.id);
+    }
+
+    // 为教材2创建章节
+    const chapters2 = [
+      {
+        textbook_id: textbook2.id,
+        name: '第一章 空间几何体',
+        level: 'chapter',
+        order: 1,
+        expanded: false,
+        knowledge_points: JSON.stringify([
+          { id: 'kp5', name: '空间几何体的结构', extendedPoints: [] },
+          { id: 'kp6', name: '空间几何体的三视图和直观图', extendedPoints: [] },
+        ]),
+      },
+    ];
+
+    const { error: chapterError2 } = await client
+      .from('textbook_chapters')
+      .insert(chapters2);
+
+    if (chapterError2) {
+      return NextResponse.json({ error: chapterError2.message }, { status: 500 });
+    }
+
+    // 创建使用学校
+    const schools = [
+      { textbook_id: textbook1.id, school_id: 's1', school_name: '北京市第一中学' },
+      { textbook_id: textbook1.id, school_id: 's2', school_name: '上海市实验中学' },
+      { textbook_id: textbook2.id, school_id: 's3', school_name: '广州市第二中学' },
+    ];
+
+    await client.from('textbook_schools').insert(schools);
+
+    // 创建发布记录
+    const publishRecords = [
+      {
+        textbook_id: textbook1.id,
+        version: 'v1.0.0',
+        description: '初始版本',
+        publish_time: '2024-01-10 09:00:00',
+        publisher: '管理员',
+        publisher_account: '000001',
+      },
+      {
+        textbook_id: textbook2.id,
+        version: 'v1.0.0',
+        description: '初始版本',
+        publish_time: '2024-01-10 10:00:00',
+        publisher: '李老师',
+        publisher_account: '234567',
+      },
+    ];
+
+    await client.from('textbook_publish_records').insert(publishRecords);
+
+    return NextResponse.json({
+      success: true,
+      message: '测试数据初始化成功',
+      textbooks: [textbook1, textbook2],
+    });
+  } catch (error) {
+    console.error('Error initializing data:', error);
+    return NextResponse.json(
+      { error: 'Failed to initialize data' },
+      { status: 500 }
+    );
+  }
+}
+
+// GET /api/init-data - 检查数据状态
+export async function GET() {
+  try {
+    const client = getSupabaseClient();
+
+    const { count: textbookCount } = await client
+      .from('textbooks')
+      .select('*', { count: 'exact', head: true });
+
+    const { count: chapterCount } = await client
+      .from('textbook_chapters')
+      .select('*', { count: 'exact', head: true });
+
+    return NextResponse.json({
+      textbooks: textbookCount || 0,
+      chapters: chapterCount || 0,
+    });
+  } catch (error) {
+    console.error('Error checking data status:', error);
+    return NextResponse.json(
+      { error: 'Failed to check data status' },
+      { status: 500 }
+    );
+  }
+}
+
+
+=== FILE: src/app/api/textbooks/[id]/changes/route.ts ===
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
+
+// GET /api/textbooks/[id]/changes - 获取变更记录
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+    const { searchParams } = new URL(request.url);
+    const unpublishedOnly = searchParams.get('unpublished') === 'true';
+
+    let query = client
+      .from('textbook_change_records')
+      .select('*')
+      .eq('textbook_id', id)
+      .order('created_at', { ascending: false });
+
+    if (unpublishedOnly) {
+      query = query.eq('is_published', false);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error fetching changes:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch changes' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/textbooks/[id]/changes - 添加变更记录
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+    const body = await request.json();
+
+    // 添加变更记录
+    const { data, error } = await client
+      .from('textbook_change_records')
+      .insert({
+        textbook_id: id,
+        change_type: body.change_type,
+        change_description: body.change_description,
+        changed_by: body.changed_by || '当前用户',
+        changed_by_role: body.changed_by_role || 'teacher',
+        dimension: body.dimension,
+        target: body.target,
+        is_published: false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // 更新教材的待发布状态
+    await client
+      .from('textbooks')
+      .update({ has_unpublished_changes: true })
+      .eq('id', id);
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error creating change:', error);
+    return NextResponse.json(
+      { error: 'Failed to create change' },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT /api/textbooks/[id]/changes - 标记变更为已发布
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+
+    // 将所有未发布的变更标记为已发布
+    const { error } = await client
+      .from('textbook_change_records')
+      .update({ is_published: true })
+      .eq('textbook_id', id)
+      .eq('is_published', false);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // 更新教材状态
+    await client
+      .from('textbooks')
+      .update({ has_unpublished_changes: false })
+      .eq('id', id);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error marking changes as published:', error);
+    return NextResponse.json(
+      { error: 'Failed to mark changes as published' },
+      { status: 500 }
+    );
+  }
+}
+
+
+=== FILE: src/app/api/textbooks/[id]/chapters/route.ts ===
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
+
+// GET /api/textbooks/[id]/chapters - 获取章节列表
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+
+    const { data, error } = await client
+      .from('textbook_chapters')
+      .select('*')
+      .eq('textbook_id', id)
+      .order('order', { ascending: true });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error fetching chapters:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch chapters' },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT /api/textbooks/[id]/chapters - 批量更新章节
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+    const body = await request.json();
+    const { chapters } = body;
+
+    // 使用事务处理（Supabase 不支持事务，需要逐个处理）
+    const results = [];
+
+    for (const chapter of chapters) {
+      if (chapter.id) {
+        // 更新现有章节
+        const { data, error } = await client
+          .from('textbook_chapters')
+          .update({
+            name: chapter.name,
+            parent_id: chapter.parent_id,
+            level: chapter.level,
+            order: chapter.order,
+            expanded: chapter.expanded,
+            knowledge_points: chapter.knowledge_points,
+            sync_courses: chapter.sync_courses,
+            practice_exams: chapter.practice_exams,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', chapter.id)
+          .select()
+          .single();
+
+        if (!error && data) {
+          results.push(data);
+        }
+      } else {
+        // 创建新章节
+        const { data, error } = await client
+          .from('textbook_chapters')
+          .insert({
+            textbook_id: id,
+            name: chapter.name,
+            parent_id: chapter.parent_id,
+            level: chapter.level,
+            order: chapter.order,
+            expanded: chapter.expanded || false,
+            knowledge_points: chapter.knowledge_points,
+            sync_courses: chapter.sync_courses,
+            practice_exams: chapter.practice_exams,
+          })
+          .select()
+          .single();
+
+        if (!error && data) {
+          results.push(data);
+        }
+      }
+    }
+
+    return NextResponse.json({ data: results });
+  } catch (error) {
+    console.error('Error updating chapters:', error);
+    return NextResponse.json(
+      { error: 'Failed to update chapters' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/textbooks/[id]/chapters - 创建章节
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+    const body = await request.json();
+
+    const { data, error } = await client
+      .from('textbook_chapters')
+      .insert({
+        textbook_id: id,
+        name: body.name,
+        parent_id: body.parent_id,
+        level: body.level,
+        order: body.order,
+        expanded: body.expanded || false,
+        knowledge_points: body.knowledge_points,
+        sync_courses: body.sync_courses,
+        practice_exams: body.practice_exams,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error creating chapter:', error);
+    return NextResponse.json(
+      { error: 'Failed to create chapter' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/textbooks/[id]/chapters - 删除章节
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+    const { searchParams } = new URL(request.url);
+    const chapterId = searchParams.get('chapterId');
+
+    if (!chapterId) {
+      return NextResponse.json(
+        { error: 'chapterId is required' },
+        { status: 400 }
+      );
+    }
+
+    const { error } = await client
+      .from('textbook_chapters')
+      .delete()
+      .eq('id', chapterId)
+      .eq('textbook_id', id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting chapter:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete chapter' },
+      { status: 500 }
+    );
+  }
+}
+
+
+=== FILE: src/app/api/textbooks/[id]/publish/route.ts ===
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
+
+// GET /api/textbooks/[id]/publish - 获取发布记录
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+
+    const { data, error } = await client
+      .from('textbook_publish_records')
+      .select('*')
+      .eq('textbook_id', id)
+      .order('publish_time', { ascending: false });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error fetching publish records:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch publish records' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/textbooks/[id]/publish - 发布新版本
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+    const body = await request.json();
+
+    const now = new Date();
+    const publishTime = now.toISOString();
+
+    // 获取未发布的变更记录
+    const { data: unpublishedChanges } = await client
+      .from('textbook_change_records')
+      .select('*')
+      .eq('textbook_id', id)
+      .eq('is_published', false);
+
+    // 创建发布记录
+    const { data: publishRecord, error: publishError } = await client
+      .from('textbook_publish_records')
+      .insert({
+        textbook_id: id,
+        version: body.version,
+        description: body.description,
+        publish_time: publishTime,
+        publisher: body.publisher || '当前用户',
+        publisher_account: body.publisher_account,
+        changes: unpublishedChanges || [],
+        scheduled_date: body.scheduled_date,
+        scheduled_time: body.scheduled_time,
+      })
+      .select()
+      .single();
+
+    if (publishError) {
+      return NextResponse.json({ error: publishError.message }, { status: 500 });
+    }
+
+    // 将变更记录标记为已发布
+    await client
+      .from('textbook_change_records')
+      .update({ is_published: true })
+      .eq('textbook_id', id)
+      .eq('is_published', false);
+
+    // 更新教材状态
+    await client
+      .from('textbooks')
+      .update({
+        current_version: body.version,
+        last_publish_time: publishTime,
+        last_publisher: body.publisher || '当前用户',
+        has_unpublished_changes: false,
+        updated_at: publishTime,
+      })
+      .eq('id', id);
+
+    return NextResponse.json({ data: publishRecord });
+  } catch (error) {
+    console.error('Error publishing:', error);
+    return NextResponse.json(
+      { error: 'Failed to publish' },
+      { status: 500 }
+    );
+  }
+}
+
+
+=== FILE: src/app/api/textbooks/[id]/route.ts ===
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
+
+// GET /api/textbooks/[id] - 获取教材详情
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+
+    const { data, error } = await client
+      .from('textbooks')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (!data) {
+      return NextResponse.json({ error: 'Textbook not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error fetching textbook:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch textbook' },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT /api/textbooks/[id] - 更新教材
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+    const body = await request.json();
+
+    const updateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    // 只更新提供的字段
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.chapter_count !== undefined) updateData.chapter_count = body.chapter_count;
+    if (body.knowledge_point_count !== undefined) updateData.knowledge_point_count = body.knowledge_point_count;
+    if (body.school_count !== undefined) updateData.school_count = body.school_count;
+    if (body.has_unpublished_changes !== undefined) updateData.has_unpublished_changes = body.has_unpublished_changes;
+    if (body.current_version !== undefined) updateData.current_version = body.current_version;
+    if (body.last_publish_time !== undefined) updateData.last_publish_time = body.last_publish_time;
+    if (body.last_publisher !== undefined) updateData.last_publisher = body.last_publisher;
+
+    const { data, error } = await client
+      .from('textbooks')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error updating textbook:', error);
+    return NextResponse.json(
+      { error: 'Failed to update textbook' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/textbooks/[id] - 删除教材
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+
+    // 先删除关联的章节
+    await client
+      .from('textbook_chapters')
+      .delete()
+      .eq('textbook_id', id);
+
+    // 删除关联的变更记录
+    await client
+      .from('textbook_change_records')
+      .delete()
+      .eq('textbook_id', id);
+
+    // 删除关联的发布记录
+    await client
+      .from('textbook_publish_records')
+      .delete()
+      .eq('textbook_id', id);
+
+    // 删除关联的学校
+    await client
+      .from('textbook_schools')
+      .delete()
+      .eq('textbook_id', id);
+
+    // 删除教材
+    const { error } = await client
+      .from('textbooks')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting textbook:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete textbook' },
+      { status: 500 }
+    );
+  }
+}
+
+
+=== FILE: src/app/api/textbooks/[id]/schools/route.ts ===
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
+
+// GET /api/textbooks/[id]/schools - 获取使用学校列表
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+
+    const { data, error } = await client
+      .from('textbook_schools')
+      .select('*')
+      .eq('textbook_id', id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error fetching schools:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch schools' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/textbooks/[id]/schools - 添加学校
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+    const body = await request.json();
+
+    // 批量插入学校
+    const schoolsToInsert = body.schools.map((school: { id: string; name: string }) => ({
+      textbook_id: id,
+      school_id: school.id,
+      school_name: school.name,
+    }));
+
+    const { data, error } = await client
+      .from('textbook_schools')
+      .insert(schoolsToInsert)
+      .select();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // 更新教材的学校数量
+    const { count } = await client
+      .from('textbook_schools')
+      .select('*', { count: 'exact', head: true })
+      .eq('textbook_id', id);
+
+    await client
+      .from('textbooks')
+      .update({ school_count: count || 0 })
+      .eq('id', id);
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error adding schools:', error);
+    return NextResponse.json(
+      { error: 'Failed to add schools' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/textbooks/[id]/schools - 删除学校
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const client = getSupabaseClient();
+    const { id } = await params;
+    const { searchParams } = new URL(request.url);
+    const schoolId = searchParams.get('schoolId');
+
+    if (!schoolId) {
+      return NextResponse.json(
+        { error: 'schoolId is required' },
+        { status: 400 }
+      );
+    }
+
+    const { error } = await client
+      .from('textbook_schools')
+      .delete()
+      .eq('textbook_id', id)
+      .eq('school_id', schoolId);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // 更新教材的学校数量
+    const { count } = await client
+      .from('textbook_schools')
+      .select('*', { count: 'exact', head: true })
+      .eq('textbook_id', id);
+
+    await client
+      .from('textbooks')
+      .update({ school_count: count || 0 })
+      .eq('id', id);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting school:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete school' },
+      { status: 500 }
+    );
+  }
+}
+
+
+=== FILE: src/app/api/textbooks/route.ts ===
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
+
+// GET /api/textbooks - 获取教材列表
+export async function GET(request: NextRequest) {
+  try {
+    const client = getSupabaseClient();
+    const { searchParams } = new URL(request.url);
+    const subject = searchParams.get('subject');
+    const phase = searchParams.get('phase');
+    const grade = searchParams.get('grade');
+
+    let query = client
+      .from('textbooks')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (subject) {
+      query = query.eq('subject', subject);
+    }
+    if (phase) {
+      query = query.eq('phase', phase);
+    }
+    if (grade) {
+      query = query.eq('grade', grade);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error fetching textbooks:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch textbooks' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/textbooks - 创建教材
+export async function POST(request: NextRequest) {
+  try {
+    const client = getSupabaseClient();
+    const body = await request.json();
+
+    const { data, error } = await client
+      .from('textbooks')
+      .insert({
+        name: body.name,
+        subject: body.subject,
+        phase: body.phase,
+        grade: body.grade,
+        publisher: body.publisher,
+        version: body.version,
+        year: body.year,
+        region: body.region,
+        chapter_count: 0,
+        knowledge_point_count: 0,
+        school_count: 0,
+        has_unpublished_changes: false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('Error creating textbook:', error);
+    return NextResponse.json(
+      { error: 'Failed to create textbook' },
+      { status: 500 }
+    );
+  }
+}
+
+
+=== FILE: src/app/globals.css ===
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --font-sans:
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', ui-sans-serif,
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+  --font-serif:
+    'Noto Serif SC', 'Songti SC', 'SimSun', ui-serif, Georgia, Cambria,
+    'Times New Roman', Times, serif;
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+body {
+  @apply font-sans;
+}
+
+/* 自定义滚动条样式 */
+@layer utilities {
+  /* Webkit 浏览器滚动条 */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #d1d5db;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: #9ca3af;
+  }
+
+  /* Firefox 滚动条 */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+}
+
+/* 动画和过渡 */
+@layer base {
+  * {
+    @apply transition-colors duration-200;
+  }
+}
+
+
+=== FILE: src/app/knowledge-system/page.tsx ===
+'use client';
+
+import { useState } from 'react';
+import { TreeDeciduous, GraduationCap, Layers } from 'lucide-react';
+import PageLayout from '@/components/shared/PageLayout';
+import KnowledgeTree from '../system-settings/KnowledgeTree';
+import TextbookTree from '../system-settings/TextbookTree';
+import TopicSystem from '../system-settings/TopicSystem';
+
+interface TabItem {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+}
+
+const tabs: TabItem[] = [
+  { id: 'knowledge-tree', label: '通用知识树', icon: <TreeDeciduous className="w-4 h-4" /> },
+  { id: 'textbook-tree', label: '教材体系知识树', icon: <GraduationCap className="w-4 h-4" /> },
+  { id: 'topic-tree', label: '专题体系知识树', icon: <Layers className="w-4 h-4" /> },
+];
+
+export default function KnowledgeSystemPage() {
+  const [activeTab, setActiveTab] = useState('knowledge-tree');
+  const [showTabs, setShowTabs] = useState(true);
+
+  const isActiveTab = (tabId: string) => activeTab === tabId;
+
+  // 详情页状态变化回调
+  const handleDetailViewChange = (isDetailView: boolean) => {
+    setShowTabs(!isDetailView);
+  };
+
+  // 获取当前面包屑
+  const getBreadcrumbs = () => {
+    const baseBreadcrumb = [{ label: '知识体系管理' }];
+    if (showTabs) {
+      return [...baseBreadcrumb, { label: tabs.find(t => t.id === activeTab)?.label || '', isLast: true }];
+    }
+    return baseBreadcrumb;
+  };
+
+  return (
+    <PageLayout
+      activeMenuId="knowledge-system"
+      breadcrumbs={getBreadcrumbs()}
+    >
+      <div className="flex flex-col h-full">
+        {/* Tab切换栏 - 仅在非详情页显示 */}
+        {showTabs && (
+          <div className="bg-white border-b border-gray-200 flex-shrink-0">
+            <div className="px-6">
+              <div className="flex items-end gap-10">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`relative flex items-center gap-2 py-4 px-1 text-sm font-medium transition-colors ${
+                      isActiveTab(tab.id)
+                        ? 'text-emerald-600'
+                        : 'text-gray-900 hover:text-emerald-600'
+                    }`}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                    {isActiveTab(tab.id) && (
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 内容显示区域 */}
+        <div className="flex-1 overflow-auto bg-gray-50 p-6">
+          {activeTab === 'knowledge-tree' && <KnowledgeTree onDetailViewChange={handleDetailViewChange} />}
+          {activeTab === 'textbook-tree' && <TextbookTree onDetailViewChange={handleDetailViewChange} />}
+          {activeTab === 'topic-tree' && <TopicSystem onDetailViewChange={handleDetailViewChange} />}
+        </div>
+      </div>
+    </PageLayout>
+  );
+}
+
+
+=== FILE: src/app/layout.tsx ===
+import type { Metadata } from 'next';
+import { Inspector } from 'react-dev-inspector';
+import { RoleProvider } from '@/contexts/RoleContext';
+import './globals.css';
+
+export const metadata: Metadata = {
+  title: {
+    default: '新应用 | 扣子编程',
+    template: '%s | 扣子编程',
+  },
+  description:
+    '扣子编程是一款一站式云端 Vibe Coding 开发平台。通过对话轻松构建智能体、工作流和网站，实现从创意到上线的无缝衔接。',
+  keywords: [
+    '扣子编程',
+    'Coze Code',
+    'Vibe Coding',
+    'AI 编程',
+    '智能体搭建',
+    '工作流搭建',
+    '网站搭建',
+    '网站部署',
+    '全栈开发',
+    'AI 工程师',
+  ],
+  authors: [{ name: 'Coze Code Team', url: 'https://code.coze.cn' }],
+  generator: 'Coze Code',
+  // icons: {
+  //   icon: '',
+  // },
+  openGraph: {
+    title: '扣子编程 | 你的 AI 工程师已就位',
+    description:
+      '我正在使用扣子编程 Vibe Coding，让创意瞬间上线。告别拖拽，拥抱心流。',
+    url: 'https://code.coze.cn',
+    siteName: '扣子编程',
+    locale: 'zh_CN',
+    type: 'website',
+    // images: [
+    //   {
+    //     url: '',
+    //     width: 1200,
+    //     height: 630,
+    //     alt: '扣子编程 - 你的 AI 工程师',
+    //   },
+    // ],
+  },
+  // twitter: {
+  //   card: 'summary_large_image',
+  //   title: 'Coze Code | Your AI Engineer is Here',
+  //   description:
+  //     'Build and deploy full-stack applications through AI conversation. No env setup, just flow.',
+  //   // images: [''],
+  // },
+  robots: {
+    index: true,
+    follow: true,
+  },
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  const isDev = process.env.NODE_ENV === 'development';
+
+  return (
+    <html lang="en">
+      <body className={`antialiased`}>
+        {isDev && <Inspector />}
+        <RoleProvider>
+          {children}
+        </RoleProvider>
+      </body>
+    </html>
+  );
+}
+
+
+=== FILE: src/app/page.tsx ===
+'use client';
+
+import PageLayout from '@/components/shared/PageLayout';
+import ComingSoon from '@/components/shared/ComingSoon';
+
+export default function Home() {
+  return (
+    <PageLayout
+      activeMenuId="my-course"
+      breadcrumbs={[
+        { label: '我的乐课', isLast: true },
+      ]}
+    >
+      <ComingSoon 
+        title="我的乐课" 
+        description="该功能正在紧张开发中，敬请期待"
+      />
+    </PageLayout>
+  );
+}
+
+
+=== FILE: src/app/robots.ts ===
+import { MetadataRoute } from 'next';
+
+export default function robots(): MetadataRoute.Robots {
+  return {
+    rules: {
+      userAgent: '*',
+      allow: '/',
+      disallow: ['/api/', '/_next/', '/static/'],
+    },
+  };
+}
+
+
+=== FILE: src/app/system-settings/KnowledgeTree.tsx ===
+'use client';
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useRole } from '@/contexts/RoleContext';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
+  Plus,
+  Edit,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  Upload,
+  Download,
+  GripVertical,
+  Eye,
+  Link2,
+  ArrowUpRight,
+  ArrowDownRight,
+  BookOpen,
+  Clock,
+  ArrowRight,
+  ArrowLeft,
+  Home,
+  Info,
+  Calculator,
+  Atom,
+  FlaskConical,
+  Microscope,
+  Globe,
+  Ruler,
+  Target,
+  X,
+  Check,
+  Video,
+  FileText,
+  Play,
+  AlertTriangle,
+  History,
+  FolderTree,
+  MoreVertical,
+  Merge,
+  Split,
+  ArrowUp,
+  ArrowDown,
+  Layers,
+} from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import AggregateHistoryModal, { AggregateHistoryItem } from '@/components/shared/AggregateHistoryModal';
+
+// 学科数据类型
+interface Subject {
+  id: string;
+  name: string;
+  knowledgeCount: number;
+  lastUpdateTime: string;
+  color: string;
+  icon: React.ReactNode;
+}
+
+// 学科配置（全局可选学科）
+const subjectConfig = [
+  { id: 'math', name: '数学', color: 'bg-blue-500', icon: <Calculator className="w-6 h-6" /> },
+  { id: 'english', name: '英语', color: 'bg-emerald-500', icon: <Globe className="w-6 h-6" /> },
+  { id: 'physics', name: '物理', color: 'bg-purple-500', icon: <Atom className="w-6 h-6" /> },
+  { id: 'chemistry', name: '化学', color: 'bg-orange-500', icon: <FlaskConical className="w-6 h-6" /> },
+  { id: 'biology', name: '生物', color: 'bg-green-500', icon: <Microscope className="w-6 h-6" /> },
+  { id: 'science', name: '科学', color: 'bg-teal-500', icon: <Ruler className="w-6 h-6" /> },
+];
+
+// 知识点关联关系类型
+interface KnowledgeRelation {
+  id: string;
+  name: string;
+  isModule?: boolean;    // 是否为大模块（用于样式区分）
+  stepId?: string;       // 所属步骤ID（用于标识同级知识点，同一stepId的知识点横向并排）
+  stepOrder?: number;    // 步骤顺序（用于排序）
+}
+
+// 学习步骤（一行可能包含多个同级知识点）
+interface LearningStep {
+  id: string;                           // 步骤ID
+  items: KnowledgeRelation[];           // 该步骤的知识点（多个则横向并排）
+}
+
+// 视频内容类型（支持多视频）
+interface VideoContent {
+  id: string;                         // 本地唯一ID（用于列表渲染key）
+  sourceType: 'upload' | 'library';   // 来源类型：上传 or 资源库
+  resourceId?: string;                // 资源ID（资源库视频）
+  url: string;                        // 视频 URL
+  name: string;                       // 视频名称
+  duration?: string;                  // 时长
+  coverUrl?: string;                  // 封面图
+  size?: string;                      // 文件大小
+  uploadTime?: string;                // 上传时间
+}
+
+// 文字内容类型
+interface TextContent {
+  content: string;              // 富文本内容（HTML格式）
+  wordCount?: number;           // 字数
+  lastEditTime?: string;        // 最后编辑时间
+  images?: TextImage[];         // 包含的图片列表
+}
+
+// 文字内容中的图片
+interface TextImage {
+  id: string;                   // 图片ID
+  url: string;                  // 图片URL
+  alt?: string;                 // 替代文本
+  width?: number;               // 宽度
+  height?: number;              // 高度
+}
+
+// 知识点数据类型
+interface KnowledgeNode {
+  id: string;
+  name: string;
+  examFrequency: 'low' | 'medium' | 'high'; // 考频：低频、中频、高频
+  children?: KnowledgeNode[];
+  expanded?: boolean;
+  // 策略相关字段（仅叶子节点有效）
+  strategyType?: 'general' | 'personalized'; // 通用策略 vs 个性化策略
+  personalizedStrategies?: string[]; // 个性化策略ID列表
+  personalizedStrategy?: PersonalizedStrategy; // 个性化策略详情
+  // 关联知识点
+  prerequisiteKnowledge?: KnowledgeRelation[]; // 前置知识点
+  extensionKnowledge?: KnowledgeRelation[]; // 延伸知识点
+  // 学习资源
+  videoContents?: VideoContent[]; // 视频讲解（支持多个视频）
+  textContent?: TextContent;      // 文字讲解
+}
+
+// 个性化策略详情
+interface PersonalizedStrategy {
+  name?: string;
+  type?: string;
+  threshold?: number;
+  questionCount?: number;
+  sources?: string[];
+  difficulty?: string;
+}
+
+// 发布记录类型
+interface PublishRecord {
+  version: string;                           // 版本号
+  description: string;                       // 更新说明
+  publishTime: string;                       // 发布时间
+  publisher: string;                         // 发布人姓名
+  publisherAccount?: string;                 // 发布人账号
+  changes?: ChangeRecord[];                  // 本次变更详情
+}
+
+// 变更记录类型
+interface ChangeRecord {
+  type: 'add' | 'modify' | 'delete';         // 变更类型
+  target: string;                            // 变更对象（知识点名称）
+  detail?: string;                           // 变更详情
+  dimension?: '知识点信息' | '知识点结构' | '学习资源';  // 变更维度
+  changedBy?: string;                        // 修改人
+  changedByRole?: 'supervisor' | 'teacher';  // 修改人角色
+  changedByAccount?: string;                 // 修改人账号
+}
+
+// 知识树页面状态类型
+interface KnowledgeTreePageState {
+  status: 'published' | 'pending';           // 发布状态
+  currentVersion: string;                    // 当前版本号
+  lastPublishTime: string;                   // 最近发布时间
+  lastPublisher: string;                     // 发布人姓名
+  pendingChanges: number;                    // 待发布变更数量
+  changedNodes: string[];                    // 有变更的节点 id 列表
+  publishHistory: PublishRecord[];           // 发布历史记录
+  scheduledPublish?: {                       // 定时发布信息
+    version: string;                         // 待发布的版本号
+    scheduledDate: string;                   // 定时日期
+    scheduledTime: string;                   // 定时时间
+    description: string;                     // 更新说明
+    publisherAccount?: string;               // 发布人账号
+  };
+}
+
+// 详情页 Tab 类型
+type DetailTabType = 'info' | 'structure' | 'resource';
+
+// 出题策略数据类型
+interface Strategy {
+  id: string;
+  name: string;
+  color: string;
+  useCount: number;
+}
+
+// 策略详情区间数据类型
+interface StrategyInterval {
+  range: string; // 如 "0%-25%"
+  questionCount: number;
+  source: string;
+  complexity: string;
+  questionTypeRatio: string;
+  difficultyRatio: string;
+  categoryRatio: string;
+  yearRange: string;
+  sortRule: string;
+}
+
+// 学段类型
+type PhaseType = 'primary' | 'junior' | 'senior';
+
+// 模拟学科数据
+const mockSubjects: Record<PhaseType, Subject[]> = {
+  primary: [
+    { id: 'math', name: '数学', knowledgeCount: 180, lastUpdateTime: '2024-02-20', color: 'bg-blue-500', icon: <Calculator className="w-6 h-6" /> },
+  ], // 小学数学
+  junior: [
+    { id: 'math', name: '数学', knowledgeCount: 312, lastUpdateTime: '2024-02-22', color: 'bg-blue-500', icon: <Calculator className="w-6 h-6" /> },
+    { id: 'english', name: '英语', knowledgeCount: 267, lastUpdateTime: '2024-02-20', color: 'bg-emerald-500', icon: <Globe className="w-6 h-6" /> },
+    { id: 'physics', name: '物理', knowledgeCount: 189, lastUpdateTime: '2024-02-19', color: 'bg-purple-500', icon: <Atom className="w-6 h-6" /> },
+    { id: 'chemistry', name: '化学', knowledgeCount: 156, lastUpdateTime: '2024-02-18', color: 'bg-orange-500', icon: <FlaskConical className="w-6 h-6" /> },
+  ],
+  senior: [
+    { id: 'math', name: '数学', knowledgeCount: 367, lastUpdateTime: '2024-02-23', color: 'bg-blue-500', icon: <Calculator className="w-6 h-6" /> },
+    { id: 'english', name: '英语', knowledgeCount: 298, lastUpdateTime: '2024-02-21', color: 'bg-emerald-500', icon: <Globe className="w-6 h-6" /> },
+    { id: 'physics', name: '物理', knowledgeCount: 234, lastUpdateTime: '2024-02-20', color: 'bg-purple-500', icon: <Atom className="w-6 h-6" /> },
+    { id: 'chemistry', name: '化学', knowledgeCount: 201, lastUpdateTime: '2024-02-19', color: 'bg-orange-500', icon: <FlaskConical className="w-6 h-6" /> },
+    { id: 'biology', name: '生物', knowledgeCount: 178, lastUpdateTime: '2024-02-18', color: 'bg-green-500', icon: <Microscope className="w-6 h-6" /> },
+  ],
+};
+
+// 策略数据
+const strategies: Strategy[] = [
+  { id: 'general', name: '通用出题策略', color: 'bg-emerald-500', useCount: 999 },
+  { id: 'basic', name: '基础概念理解策略', color: 'bg-blue-500', useCount: 12 },
+  { id: 'comprehensive', name: '综合应用策略', color: 'bg-purple-500', useCount: 8 },
+  { id: 'advanced', name: '高阶思维策略', color: 'bg-orange-500', useCount: 5 },
+  { id: 'exam', name: '考试冲刺策略', color: 'bg-red-500', useCount: 15 },
+];
+
+// 策略详情数据（按掌握度区间）
+const mockStrategyDetails: StrategyInterval[] = [
+  {
+    range: '0%-25%',
+    questionCount: 8,
+    source: '中考真题',
+    complexity: '仅目标知识点',
+    questionTypeRatio: '选择题60%',
+    difficultyRatio: '易80%\n较易10%\n中档10%',
+    categoryRatio: '常考题50%\n易错题30%\n好题20%',
+    yearRange: '近三年',
+    sortRule: '引用次数>3',
+  },
+  {
+    range: '26%-50%',
+    questionCount: 12,
+    source: '中考真题\n模拟题',
+    complexity: '目标知识点\n关联知识点',
+    questionTypeRatio: '选择题50%\n填空题30%\n解答题20%',
+    difficultyRatio: '易60%\n较易25%\n中档15%',
+    categoryRatio: '常考题40%\n易错题35%\n好题25%',
+    yearRange: '近三年',
+    sortRule: '引用次数>2',
+  },
+  {
+    range: '51%-75%',
+    questionCount: 15,
+    source: '模拟题\n竞赛题',
+    complexity: '多知识点复合',
+    questionTypeRatio: '选择题30%\n填空题30%\n解答题40%',
+    difficultyRatio: '易40%\n较易30%\n中档30%',
+    categoryRatio: '常考题30%\n易错题40%\n好题30%',
+    yearRange: '近三年',
+    sortRule: '引用次数>1',
+  },
