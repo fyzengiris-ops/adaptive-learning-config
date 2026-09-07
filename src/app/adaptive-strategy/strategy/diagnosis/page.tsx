@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import PageLayout from '@/components/shared/PageLayout';
-import DocPanel from '@/components/shared/DocPanel';
 import AggregateHistoryModal, { AggregateHistoryItem } from '@/components/shared/AggregateHistoryModal';
 
 // 场景类型（不包含 all）
@@ -1182,8 +1181,6 @@ function DiagnosisStrategyListContent() {
         }}
       />
 
-      {/* 业务逻辑文档面板 */}
-      <DocPanel currentPath="/adaptive-strategy/strategy/diagnosis" />
     </PageLayout>
   );
 }

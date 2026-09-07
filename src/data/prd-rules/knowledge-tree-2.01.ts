@@ -192,7 +192,7 @@ export const leafNodeTabs: PrdTooltipData = {
 export const academicRequirementCard: PrdTooltipData = {
   title: '学业要求',
   rules: [
-    { category: '字段规则', content: '选项值：了解 / 理解 / 掌握 / 运用' },
+    { category: '字段规则', content: '选项值：了解 / 理解 / 掌握 / 运用 / 超纲' },
     { category: '字段规则', content: '非必填；未配置时展示【未设置】' },
     { category: '显示规则', content: '仅叶子节点展示，位置在考频卡片左侧' },
     { category: '显示规则', content: '非编辑态下仅用于查看当前知识点学业要求' },

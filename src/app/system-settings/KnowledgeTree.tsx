@@ -75,10 +75,34 @@ import * as prd201 from '@/data/prd-rules/knowledge-tree-2.01';
 import * as prd204 from '@/data/prd-rules/knowledge-tree-2.04';
 import KnowledgeNetworkGraph from '@/components/shared/KnowledgeNetworkGraph';
 import KnowledgeSelectorTree, { getBatchChildIds } from '@/components/shared/KnowledgeSelectorTree';
-import DocPanel from '@/components/shared/DocPanel';
 import ImportValidationModal from '@/components/shared/ImportValidationModal';
-import KnowledgeCardPanel, { type KnowledgeCard, sampleKnowledgeCard, emptyKnowledgeCard } from '@/components/shared/KnowledgeCardPanel';
+import KnowledgeCardPanel, {
+  type KnowledgeCard,
+  type KnowledgeCardPrdCommand,
+  type RelatedExamPoint,
+  sampleKnowledgeCard,
+  emptyKnowledgeCard,
+  EXAM_POINT_TYPES,
+  examTypeMeta,
+  examPointHasExample,
+  examPointHasDescription,
+  validateAndSanitizeKnowledgeCard,
+  knowledgeTipsHaveContent,
+} from '@/components/shared/KnowledgeCardPanel';
 import RequirementMarkerHost from '@/components/prd/RequirementMarkerHost';
+import RequirementPanel, { PrdToggleButton } from '@/components/prd/RequirementPanel';
+import {
+  KNOWLEDGE_TREE_DETAIL_EXCLUDE_IDS,
+  KNOWLEDGE_TREE_DETAIL_REGISTRY_IDS,
+  KNOWLEDGE_TREE_DETAIL_SCOPE_ID,
+} from '@/data/requirements/knowledgeTreeDetailMarkers';
+import {
+  highlightReqAnchor,
+  REQ_PRD_ACTIVATE,
+  syncPrdPanelOffset,
+  waitForReqAnchor,
+  type ReqPrdActivateDetail,
+} from '@/lib/requirementPrdEvents';
 import knowledgeTreeData from '@/data/knowledge-tree.json';
 
 // 学科数据类型
@@ -146,8 +170,8 @@ interface TextImage {
   height?: number;              // 高度
 }
 
-// 学业要求：了解 / 理解 / 掌握 / 运用；未设置则为 undefined
-type AcademicRequirement = 'know' | 'understand' | 'master' | 'apply';
+// 学业要求：了解 / 理解 / 掌握 / 运用 / 超纲；未设置则为 undefined
+type AcademicRequirement = 'know' | 'understand' | 'master' | 'apply' | 'beyond';
 
 // 知识点数据类型
 interface KnowledgeNode {
@@ -168,7 +192,22 @@ interface KnowledgeNode {
   // 学习资源
   videoContents?: VideoContent[]; // 视频讲解（支持多个视频）
   textContent?: TextContent;      // 文字讲解（已由知识卡片承接，保留兼容）
-  knowledgeCard?: KnowledgeCard;   // 知识卡片（核心概念 + 考点）
+  relatedExamPoints?: RelatedExamPoint[]; // 关联考点（名称+类型主数据）
+  knowledgeCard?: KnowledgeCard;   // 知识卡片（核心概念 + 考点扩展内容）
+}
+
+function walkKnowledgeNodes(
+  list: KnowledgeNode[],
+  pred: (node: KnowledgeNode) => boolean
+): KnowledgeNode | null {
+  for (const node of list) {
+    if (pred(node)) return node;
+    if (node.children?.length) {
+      const found = walkKnowledgeNodes(node.children, pred);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 // 个性化策略详情
@@ -196,7 +235,7 @@ interface ChangeRecord {
   type: 'add' | 'modify' | 'delete';         // 变更类型
   target: string;                            // 变更对象（知识点名称）
   detail?: string;                           // 变更详情
-  dimension?: '知识点信息' | '知识点结构' | '学习资源';  // 变更维度
+  dimension?: '知识点信息' | '关联考点' | '知识点结构' | '学习资源';  // 变更维度
   changedBy?: string;                        // 修改人
   changedByRole?: 'supervisor' | 'teacher';  // 修改人角色
   changedByAccount?: string;                 // 修改人账号
@@ -221,7 +260,7 @@ interface KnowledgeTreePageState {
 }
 
 // 详情页 Tab 类型
-type DetailTabType = 'info' | 'structure' | 'resource';
+type DetailTabType = 'info' | 'relatedExam' | 'structure' | 'resource';
 
 // 出题策略数据类型
 interface Strategy {
@@ -831,6 +870,11 @@ const mockKnowledgeTree: KnowledgeNode[] = [
         id: '1-1',
         name: '一次函数',
         examFrequency: 'high',
+        relatedExamPoints: [
+          { id: 'ep-1', name: '判断一般幂函数的单调性', examType: 'basic' },
+          { id: 'ep-2', name: '判断与幂函数相关的复合函数的单调性', examType: 'advanced' },
+          { id: 'ep-3', name: '由幂函数的单调性求参数', examType: 'sprint' },
+        ],
         knowledgeCard: sampleKnowledgeCard(),
         strategyType: 'general',
         prerequisiteKnowledge: [
@@ -2840,11 +2884,23 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
     excelRow: number;
     knowledgePath: string;
     result: 'pass' | 'fail';
-    errorType?: 'path-invalid' | 'node-not-found' | 'path-modified' | 'path-level-broken' | 'duplicate-node' | 'exam-freq-invalid' | 'exam-freq-not-leaf' | 'academic-req-invalid' | 'academic-req-not-leaf' | 'prerequisite-not-found' | 'prerequisite-self' | 'prerequisite-duplicate' | 'strategy-not-found' | 'strategy-format' | 'other';
+    errorType?: 'path-invalid' | 'node-not-found' | 'path-modified' | 'path-level-broken' | 'duplicate-node' | 'exam-freq-invalid' | 'exam-freq-not-leaf' | 'academic-req-invalid' | 'academic-req-not-leaf' | 'prerequisite-not-found' | 'prerequisite-self' | 'prerequisite-duplicate' | 'strategy-not-found' | 'strategy-format' | 'exam-point-invalid' | 'exam-point-not-leaf' | 'exam-point-mismatch' | 'other';
     reason?: string;
     suggestion?: string;
   }>>([]);
   const [showStrategyDetail, setShowStrategyDetail] = useState(false);
+
+  useEffect(() => {
+    if (!showImportDialog) return;
+    window.dispatchEvent(new Event('req-markers-rescan'));
+    const t = window.setTimeout(() => {
+      window.dispatchEvent(new Event('req-markers-rescan'));
+    }, 0);
+    return () => {
+      window.clearTimeout(t);
+      window.dispatchEvent(new Event('req-markers-rescan'));
+    };
+  }, [showImportDialog, importValidationStatus]);
   
   // 知识树编辑模式状态
   const [isEditingTree, setIsEditingTree] = useState(false);
@@ -2855,6 +2911,9 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
   
   // 知识点详情编辑模式状态
   const [isEditingDetail, setIsEditingDetail] = useState(false);
+  const [prdOpen, setPrdOpen] = useState(false);
+  const [prdWidth, setPrdWidth] = useState(360);
+  const [kcPrdCommand, setKcPrdCommand] = useState<KnowledgeCardPrdCommand | null>(null);
   
   // 监听取消编辑确认弹窗状态变化
   useEffect(() => {
@@ -2913,6 +2972,23 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
   
   // 详情页 Tab 切换状态
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTabType>('info');
+  const [pendingDeleteRelatedExam, setPendingDeleteRelatedExam] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [relatedExamToast, setRelatedExamToast] = useState<string | null>(null);
+  const relatedExamToastTimerRef = React.useRef<number | null>(null);
+
+  const showRelatedExamToast = (message: string) => {
+    setRelatedExamToast(message);
+    if (relatedExamToastTimerRef.current) {
+      window.clearTimeout(relatedExamToastTimerRef.current);
+    }
+    relatedExamToastTimerRef.current = window.setTimeout(() => {
+      setRelatedExamToast(null);
+      relatedExamToastTimerRef.current = null;
+    }, 3000);
+  };
   
   // 视频上传状态
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
@@ -3131,12 +3207,14 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
     understand: '理解',
     master: '掌握',
     apply: '运用',
+    beyond: '超纲',
   };
   const academicRequirementLabelToValue: Record<string, AcademicRequirement> = {
     '了解': 'know',
     '理解': 'understand',
     '掌握': 'master',
     '运用': 'apply',
+    '超纲': 'beyond',
   };
 
   // 扁平化知识树数据（用于导出，支持7级标题）
@@ -3152,6 +3230,8 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
     examFrequency: string;
     prerequisiteKnowledge: string;
     strategy: string;
+    examPointNames: string;
+    examPointTypes: string;
   }> => {
     const result: Array<{
       level1: string;
@@ -3165,6 +3245,8 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
       examFrequency: string;
       prerequisiteKnowledge: string;
       strategy: string;
+      examPointNames: string;
+      examPointTypes: string;
     }> = [];
 
     const traverse = (nodeList: KnowledgeNode[], currentPath: string[]) => {
@@ -3173,6 +3255,9 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
         
         // 判断是否为叶子节点
         if (!node.children || node.children.length === 0) {
+          const relatedExams = (node.relatedExamPoints || []).filter(
+            (item) => item.name && item.name.trim()
+          );
           // 构建行数据（支持7级标题，未使用的层级留空）
           const rowData = {
             level1: newPath[0] || '',
@@ -3190,6 +3275,10 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
             strategy: node.strategyType === 'personalized'
               ? (personalizedStrategies.find(s => node.personalizedStrategies?.includes(s.id))?.name || '')
               : '通用策略',
+            examPointNames: relatedExams.map((item) => item.name).join('、'),
+            examPointTypes: relatedExams
+              .map((item) => examTypeMeta(item.examType)?.label || '')
+              .join('、'),
           };
           result.push(rowData);
         }
@@ -3215,7 +3304,9 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
     // 构建Excel数据
     // 第1行：字段说明（合并单元格）
     const instructionRow = [
-      '【标题字段说明】：一级标题至七级标题表示当前末级知识点从上到下的完整层级路径，未使用到的层级会留空；【学业要求字段说明】仅末级知识点会导出学业要求；【考频字段说明】：仅末级知识点会导出考频；【前置知识点字段说明】：仅导出当前末级知识点的直接前置知识点；【出题策略字段说明】：若当前知识点使用默认通用策略，则该字段出题策略会显示为【通用策略】；若绑定的是个性化策略，会导出具体的个性化策略名称；',
+      '【标题字段说明】：一级标题至七级标题表示当前末级知识点从上到下的完整层级路径，未使用到的层级会留空；【学业要求字段说明】仅末级知识点会导出学业要求，取值为了解/理解/掌握/运用/超纲；未设置时该单元格留空；【考频字段说明】：仅末级知识点会导出考频；【考点名称/考点类型字段说明】：仅末级知识点会导出关联考点，多个考点用顿号（、）分隔，考点名称与考点类型按顺序一一对应；【前置知识点字段说明】：仅导出当前末级知识点的直接前置知识点；【出题策略字段说明】：若当前知识点使用默认通用策略，则该字段出题策略会显示为【通用策略】；若绑定的是个性化策略，会导出具体的个性化策略名称；',
+      '',
+      '',
       '',
       '',
       '',
@@ -3229,10 +3320,10 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
     ];
     
     // 第2行：空行（分隔说明区和数据区）
-    const emptyRow = ['', '', '', '', '', '', '', '', '', '', ''];
+    const emptyRow = ['', '', '', '', '', '', '', '', '', '', '', '', ''];
     
-    // 第3行：表头（学业要求在考频左侧）
-    const header = ['一级标题', '二级标题', '三级标题', '四级标题', '五级标题', '六级标题', '七级标题', '学业要求', '考频', '前置知识点', '出题策略'];
+    // 第3行：表头（学业要求 → 考频 → 考点名称/类型 → 前置知识点 → 出题策略）
+    const header = ['一级标题', '二级标题', '三级标题', '四级标题', '五级标题', '六级标题', '七级标题', '学业要求', '考频', '考点名称', '考点类型', '前置知识点', '出题策略'];
     
     // 数据行
     const dataRows = flatData.map(row => [
@@ -3245,6 +3336,8 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
       row.level7,
       row.academicRequirement,
       row.examFrequency,
+      row.examPointNames,
+      row.examPointTypes,
       row.prerequisiteKnowledge,
       row.strategy,
     ]);
@@ -3272,13 +3365,15 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
       { wch: 15 }, // 七级标题
       { wch: 12 }, // 学业要求
       { wch: 10 }, // 考频
+      { wch: 25 }, // 考点名称
+      { wch: 20 }, // 考点类型
       { wch: 25 }, // 前置知识点
       { wch: 30 }, // 出题策略
     ];
     
-    // 合并说明单元格（A1:K1）
+    // 合并说明单元格（A1:M1）
     ws['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } },
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } },
     ];
     
     XLSX.utils.book_append_sheet(wb, ws, '知识树');
@@ -3312,19 +3407,21 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
       { width: 15 }, // 七级标题
       { width: 12 }, // 学业要求
       { width: 10 }, // 考频
+      { width: 25 }, // 考点名称
+      { width: 20 }, // 考点类型
       { width: 25 }, // 前置知识点
       { width: 20 }, // 出题策略
     ];
 
     // 第一行：填写说明，合并单元格
-    const instructionText = '填写说明：\n【标题字段】一级标题至七级标题用于匹配线上知识树节点，请按完整层级路径填写，不支持通过导入修改树目录；\n【学业要求字段】仅末级知识点可填写"了解/理解/掌握/运用"，留空不更新，【清空】表示清空线上内容；\n【考频字段】仅末级知识点可填写"高频/中频/低频"，留空不更新，【清空】表示清空线上内容；\n【前置知识点】仅末级知识点可填写，多个用顿号（、）分隔，留空不更新，【清空】表示清空线上内容；\n【出题策略】仅末级知识点可填写系统已存在的个性化策略名称，留空不更新，【清空】表示清空后回退为默认的通用策略。';
+    const instructionText = '填写说明：\n【标题字段】一级标题至七级标题用于匹配线上知识树节点，请按完整层级路径填写，不支持通过导入修改树目录；\n【学业要求字段】仅末级知识点可填写"了解/理解/掌握/运用/超纲"，留空不更新，【清空】表示清空线上内容；\n【考频字段】仅末级知识点可填写"高频/中频/低频"，留空不更新，【清空】表示清空线上内容；\n【考点名称】仅末级知识点可填写，多个用顿号（、）分隔，留空不更新，【清空】表示清空线上全部关联考点（名称与类型都清空）；可只填考点名称、不填考点类型；\n【考点类型】仅末级知识点可填写"基础达标/综合进阶/高分冲刺"，不能只填类型不填名称；名称与类型都填时，多个用顿号（、）分隔且须按顺序一一对应、个数相同；留空不更新已有考点的类型；仅类型列填写【清空】且名称列填写实际名称时，只清空各考点类型、名称按文件内容保留；\n【前置知识点】仅末级知识点可填写，多个用顿号（、）分隔，留空不更新，【清空】表示清空线上内容；\n【出题策略】仅末级知识点可填写系统已存在的个性化策略名称，留空不更新，【清空】表示清空后回退为默认的通用策略。';
     ws.getCell('A1').value = instructionText;
     ws.getCell('A1').alignment = { wrapText: true, vertical: 'middle' };
-    ws.mergeCells('A1:K1');
-    ws.getRow(1).height = 140;
+    ws.mergeCells('A1:M1');
+    ws.getRow(1).height = 180;
 
     // 第二行：表头
-    const header = ['一级标题', '二级标题', '三级标题', '四级标题', '五级标题', '六级标题', '七级标题', '学业要求', '考频', '前置知识点', '出题策略'];
+    const header = ['一级标题', '二级标题', '三级标题', '四级标题', '五级标题', '六级标题', '七级标题', '学业要求', '考频', '考点名称', '考点类型', '前置知识点', '出题策略'];
     ws.addRow(header);
 
     // 导出文件
@@ -3442,7 +3539,7 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
 
         // 寻找表头行（支持不同模板格式：可能在第1行、第2行或第3行）
         let headerRowIndex = -1;
-        const expectedHeaders = ['一级标题', '二级标题', '学业要求', '考频', '前置知识点', '出题策略'];
+        const expectedHeaders = ['一级标题', '二级标题', '学业要求', '考频', '考点名称', '考点类型', '前置知识点', '出题策略'];
         for (let i = 0; i < Math.min(5, jsonData.length); i++) {
           const row = jsonData[i];
           if (row && row.length >= 7) {
@@ -3504,7 +3601,7 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
           excelRow: number;
           knowledgePath: string;
           result: 'pass' | 'fail';
-          errorType?: 'path-invalid' | 'node-not-found' | 'path-modified' | 'path-level-broken' | 'duplicate-node' | 'exam-freq-invalid' | 'exam-freq-not-leaf' | 'academic-req-invalid' | 'academic-req-not-leaf' | 'prerequisite-not-found' | 'prerequisite-self' | 'prerequisite-duplicate' | 'strategy-not-found' | 'strategy-format' | 'other';
+          errorType?: 'path-invalid' | 'node-not-found' | 'path-modified' | 'path-level-broken' | 'duplicate-node' | 'exam-freq-invalid' | 'exam-freq-not-leaf' | 'academic-req-invalid' | 'academic-req-not-leaf' | 'prerequisite-not-found' | 'prerequisite-self' | 'prerequisite-duplicate' | 'strategy-not-found' | 'strategy-format' | 'exam-point-invalid' | 'exam-point-not-leaf' | 'exam-point-mismatch' | 'other';
           reason?: string;
           suggestion?: string;
         }> = [];
@@ -3559,10 +3656,14 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
           // 学业要求列（第8列，索引7）；考频列（第9列，索引8）
           const academicReqValue = row[7] ? String(row[7]).trim() : '';
           const examFreqValue = row[8] ? String(row[8]).trim() : '';
-          // 前置知识点列（第10列，索引9）
-          const prerequisiteValue = row[9] ? String(row[9]).trim() : '';
-          // 出题策略列（第11列，索引10）
-          const strategyValue = row[10] ? String(row[10]).trim() : '';
+          // 考点名称列（第10列，索引9）
+          const examPointNameValue = row[9] ? String(row[9]).trim() : '';
+          // 考点类型列（第11列，索引10）
+          const examPointTypeValue = row[10] ? String(row[10]).trim() : '';
+          // 前置知识点列（第12列，索引11）
+          const prerequisiteValue = row[11] ? String(row[11]).trim() : '';
+          // 出题策略列（第13列，索引12）
+          const strategyValue = row[12] ? String(row[12]).trim() : '';
 
           if (!matchedOnline) {
             // 尝试检查是否是标题被修改的情况
@@ -3589,17 +3690,17 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
           // 节点匹配成功，进入详情校验
           const isLeaf = !matchedOnline.node.children || matchedOnline.node.children.length === 0;
           const errors: Array<{
-            errorType: 'exam-freq-invalid' | 'exam-freq-not-leaf' | 'academic-req-invalid' | 'academic-req-not-leaf' | 'prerequisite-not-found' | 'prerequisite-self' | 'prerequisite-duplicate' | 'strategy-not-found' | 'strategy-format';
+            errorType: 'exam-freq-invalid' | 'exam-freq-not-leaf' | 'academic-req-invalid' | 'academic-req-not-leaf' | 'prerequisite-not-found' | 'prerequisite-self' | 'prerequisite-duplicate' | 'strategy-not-found' | 'strategy-format' | 'exam-point-invalid' | 'exam-point-not-leaf' | 'exam-point-mismatch';
             reason: string;
             suggestion: string;
           }> = [];
 
           // 校验学业要求
           if (academicReqValue && academicReqValue !== '【清空】' && academicReqValue !== '清空') {
-            if (!['了解', '理解', '掌握', '运用'].includes(academicReqValue)) {
+            if (!['了解', '理解', '掌握', '运用', '超纲'].includes(academicReqValue)) {
               errors.push({
                 errorType: 'academic-req-invalid',
-                reason: `学业要求值"${academicReqValue}"无效，学业要求仅支持填写"了解 / 理解 / 掌握 / 运用"`,
+                reason: `学业要求值"${academicReqValue}"无效，学业要求仅支持填写"了解 / 理解 / 掌握 / 运用 / 超纲"`,
                 suggestion: '请按模板要求填写标准枚举值，或留空不更新，或填写【清空】清空线上内容',
               });
             }
@@ -3674,6 +3775,99 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                 reason: `出题策略"${strategyValue}"未在系统中找到对应个性化策略`,
                 suggestion: '请填写系统中已存在的个性化策略名称，或留空使用默认通用策略',
               });
+            }
+          }
+
+          // 校验关联考点（名称 + 类型）
+          const examClearTokens = ['【清空】', '清空'];
+          const isNameClear = examClearTokens.includes(examPointNameValue);
+          const isTypeClear = examClearTokens.includes(examPointTypeValue);
+          const hasExamInput = Boolean(examPointNameValue || examPointTypeValue);
+
+          if (hasExamInput) {
+            if (!isLeaf) {
+              errors.push({
+                errorType: 'exam-point-not-leaf',
+                reason: '关联考点仅允许填写在末级知识点行',
+                suggestion: '请清空当前行考点名称与考点类型，或确认该行是否为末级知识点',
+              });
+            } else if (isNameClear) {
+              // 名称列清空：整表清空关联考点，类型列是否清空均可
+            } else if (isTypeClear) {
+              // 仅类型列清空：名称列须有实际考点名称
+              const names = examPointNameValue
+                .split('、')
+                .map((item) => item.trim())
+                .filter((item) => item !== '');
+              if (!examPointNameValue || names.length === 0) {
+                errors.push({
+                  errorType: 'exam-point-mismatch',
+                  reason: '仅清空考点类型时，考点名称列须填写实际考点名称',
+                  suggestion: '请在考点名称列按顿号填写名称；若要清空全部关联考点，请在考点名称列填写【清空】',
+                });
+              } else {
+                const uniqueNames = new Set(names);
+                if (uniqueNames.size < names.length) {
+                  errors.push({
+                    errorType: 'exam-point-invalid',
+                    reason: '考点名称存在重复项',
+                    suggestion: '请去重后重新上传',
+                  });
+                }
+              }
+            } else {
+              const names = examPointNameValue
+                .split('、')
+                .map((item) => item.trim())
+                .filter((item) => item !== '');
+              const types = examPointTypeValue
+                .split('、')
+                .map((item) => item.trim())
+                .filter((item) => item !== '');
+              const validTypeLabels = EXAM_POINT_TYPES.map((item) => item.label);
+
+              if (names.length === 0) {
+                errors.push({
+                  errorType: 'exam-point-mismatch',
+                  reason: '不能只填写考点类型，须同时填写考点名称',
+                  suggestion: '请在考点名称列按顿号填写名称；若只更新考点列表，可只填名称、类型列留空',
+                });
+              } else if (types.length === 0) {
+                const uniqueNames = new Set(names);
+                if (uniqueNames.size < names.length) {
+                  errors.push({
+                    errorType: 'exam-point-invalid',
+                    reason: '考点名称存在重复项',
+                    suggestion: '请去重后重新上传',
+                  });
+                }
+              } else {
+                if (names.length !== types.length) {
+                  errors.push({
+                    errorType: 'exam-point-mismatch',
+                    reason: `考点名称数量（${names.length}）与考点类型数量（${types.length}）不一致`,
+                    suggestion: '请保证考点名称与考点类型按顿号分隔后数量相同且顺序对应',
+                  });
+                }
+
+                const invalidTypes = types.filter((label) => !validTypeLabels.includes(label));
+                if (invalidTypes.length > 0) {
+                  errors.push({
+                    errorType: 'exam-point-invalid',
+                    reason: `考点类型"${invalidTypes.join('、')}"无效，仅支持"基础达标 / 综合进阶 / 高分冲刺"`,
+                    suggestion: '请按模板要求填写标准枚举值，多个用顿号（、）分隔',
+                  });
+                }
+
+                const uniqueNames = new Set(names);
+                if (uniqueNames.size < names.length) {
+                  errors.push({
+                    errorType: 'exam-point-invalid',
+                    reason: '考点名称存在重复项',
+                    suggestion: '请去重后重新上传',
+                  });
+                }
+              }
             }
           }
 
@@ -3813,13 +4007,40 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
   const handleSaveWithPending = () => {
     if (!selectedNode || !pageState) return;
 
+    const relatedList = editData.relatedExamPoints ?? selectedNode.relatedExamPoints ?? [];
+    if (relatedList.some((item) => !item.name || !item.name.trim())) {
+      showRelatedExamToast('请填写所有考点名称后再保存');
+      setActiveDetailTab('relatedExam');
+      return;
+    }
+    if (relatedList.some((item) => !item.examType)) {
+      showRelatedExamToast('请为所有考点选择类型');
+      setActiveDetailTab('relatedExam');
+      return;
+    }
+    const trimmedNames = relatedList.map((item) => item.name.trim());
+    if (new Set(trimmedNames).size < trimmedNames.length) {
+      showRelatedExamToast('考点名称不能重复');
+      setActiveDetailTab('relatedExam');
+      return;
+    }
+
+    const draftCard =
+      knowledgeCardDraftRef.current ?? editData.knowledgeCard ?? selectedNode.knowledgeCard;
+    const cardResult = validateAndSanitizeKnowledgeCard(draftCard);
+    if (!cardResult.ok) {
+      showRelatedExamToast(cardResult.message);
+      return;
+    }
+
     const updatedNode: KnowledgeNode = {
       ...selectedNode,
       ...editData,
-      knowledgeCard:
-        knowledgeCardDraftRef.current ??
-        editData.knowledgeCard ??
-        selectedNode.knowledgeCard,
+      relatedExamPoints: relatedList.map((item) => ({
+        ...item,
+        name: item.name.trim(),
+      })),
+      knowledgeCard: cardResult.card,
     };
     if (!editData.academicRequirement) {
       delete updatedNode.academicRequirement;
@@ -3839,33 +4060,59 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
     setSelectedNode(updatedNode);
     setIsEditingDetail(false);
     knowledgeCardDraftRef.current = undefined;
+    setPendingDeleteRelatedExam(null);
     setEditData({});
-    
-    // 添加变更记录
-    const dimensionMap: Record<DetailTabType, '知识点信息' | '知识点结构' | '学习资源'> = {
-      info: '知识点信息',
-      structure: '知识点结构',
-      resource: '学习资源'
-    };
-    const newChange: ChangeRecord = { 
-      type: 'modify', 
-      target: selectedNode.name, 
-      detail: '修改知识点配置',
-      dimension: dimensionMap[activeDetailTab],
-      changedByRole: isTeacher ? 'teacher' : 'supervisor',
-      changedByAccount: String(Math.floor(100000 + Math.random() * 900000)),
-    };
-    setPendingChanges(prev => [...prev, newChange]);
-    
-    // 更新页面状态为待发布（使用函数式更新确保获取最新值）
-    setPageState(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        status: 'pending',
-        pendingChanges: prev.pendingChanges + 1,
-      };
-    });
+
+    const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    const changedDimensions: Array<'知识点信息' | '关联考点' | '知识点结构' | '学习资源'> = [];
+    if (
+      selectedNode.academicRequirement !== updatedNode.academicRequirement ||
+      selectedNode.examFrequency !== updatedNode.examFrequency ||
+      selectedNode.strategyType !== updatedNode.strategyType ||
+      !sameJson(selectedNode.personalizedStrategies, updatedNode.personalizedStrategies) ||
+      !sameJson(selectedNode.personalizedStrategy, updatedNode.personalizedStrategy)
+    ) {
+      changedDimensions.push('知识点信息');
+    }
+    if (!sameJson(selectedNode.relatedExamPoints, updatedNode.relatedExamPoints)) {
+      changedDimensions.push('关联考点');
+    }
+    if (
+      !sameJson(selectedNode.prerequisiteKnowledge, updatedNode.prerequisiteKnowledge) ||
+      !sameJson(selectedNode.extensionKnowledge, updatedNode.extensionKnowledge) ||
+      !sameJson(selectedNode.convergenceKnowledge, updatedNode.convergenceKnowledge)
+    ) {
+      changedDimensions.push('知识点结构');
+    }
+    if (
+      !sameJson(selectedNode.knowledgeCard, updatedNode.knowledgeCard) ||
+      !sameJson(selectedNode.videoContents, updatedNode.videoContents) ||
+      !sameJson(selectedNode.textContent, updatedNode.textContent)
+    ) {
+      changedDimensions.push('学习资源');
+    }
+
+    if (changedDimensions.length > 0) {
+      const role = isTeacher ? 'teacher' : 'supervisor';
+      const account = String(Math.floor(100000 + Math.random() * 900000));
+      const newChanges: ChangeRecord[] = changedDimensions.map((dimension) => ({
+        type: 'modify',
+        target: selectedNode.name,
+        detail: '修改知识点配置',
+        dimension,
+        changedByRole: role,
+        changedByAccount: account,
+      }));
+      setPendingChanges((prev) => [...prev, ...newChanges]);
+      setPageState((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          status: 'pending',
+          pendingChanges: prev.pendingChanges + newChanges.length,
+        };
+      });
+    }
   };
 
   // DnD sensors
@@ -3896,13 +4143,28 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
     // 检查是否有学习资源
     const hasCard = Boolean(
                           node.knowledgeCard &&
-                          (node.knowledgeCard.keyPoints.length > 0 ||
-                            node.knowledgeCard.formulas.length > 0 ||
-                            node.knowledgeCard.examPoints.length > 0)
+                          (node.knowledgeCard.keyPoints.some(
+                              (kp) =>
+                                Boolean(kp.content && kp.content.trim()) ||
+                                Boolean(kp.images && kp.images.length > 0)
+                            ) ||
+                            (node.knowledgeCard.customModules || []).some(
+                              (m) =>
+                                Boolean(m.name && m.name.trim()) ||
+                                (m.items || []).some(
+                                  (it) =>
+                                    Boolean(it.content && it.content.trim()) ||
+                                    Boolean(it.images && it.images.length > 0)
+                                )
+                            ) ||
+                            node.knowledgeCard.examPoints.length > 0 ||
+                            knowledgeTipsHaveContent(node.knowledgeCard.knowledgeTips))
                         );
+    const hasRelatedExam = Boolean(node.relatedExamPoints && node.relatedExamPoints.length > 0);
     const hasResources = Boolean((node.videoContents && node.videoContents.length > 0) ||
                          (node.textContent && node.textContent.content && node.textContent.content.length > 0) ||
-                         hasCard);
+                         hasCard ||
+                         hasRelatedExam);
     return Boolean(hasStructure || hasResources);
   };
 
@@ -4254,6 +4516,7 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
       extensionKnowledge: selectedNode.extensionKnowledge || [],
       videoContents: selectedNode.videoContents || [],
       textContent: selectedNode.textContent,
+      relatedExamPoints: structuredClone(selectedNode.relatedExamPoints || []),
       knowledgeCard,
     });
   };
@@ -4262,7 +4525,190 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
   const handleCancel = () => {
     setIsEditingDetail(false);
     knowledgeCardDraftRef.current = undefined;
+    setPendingDeleteRelatedExam(null);
     setEditData({});
+  };
+
+  const prdCtxRef = useRef({
+    selectedSubject,
+    selectedNode,
+    knowledgeTree,
+    isEditingDetail,
+  });
+  prdCtxRef.current = { selectedSubject, selectedNode, knowledgeTree, isEditingDetail };
+  const handleEditRef = useRef(handleEdit);
+  handleEditRef.current = handleEdit;
+  const selectNodeRef = useRef(selectNode);
+  selectNodeRef.current = selectNode;
+
+  useEffect(() => {
+    syncPrdPanelOffset(prdOpen, prdWidth);
+  }, [prdOpen, prdWidth]);
+
+  useEffect(() => () => syncPrdPanelOffset(false, 0), []);
+
+  useEffect(() => {
+    let seq = 0;
+    const onActivate = (event: Event) => {
+      const requirement = (event as CustomEvent<ReqPrdActivateDetail>).detail?.requirement;
+      if (!requirement) return;
+      const token = ++seq;
+      void (async () => {
+        const ctx = prdCtxRef.current;
+        if (!ctx.selectedSubject) return;
+
+        const steps = requirement.activate ?? [];
+        const dialogs = steps.map((step) => step.dialog).filter(Boolean) as string[];
+        const tabs = steps.map((step) => step.tab).filter(Boolean) as string[];
+        const anchors = steps.map((step) => step.anchorId).filter(Boolean) as string[];
+        const lastAnchor = anchors[anchors.length - 1] ?? requirement.anchorId;
+        const isLeaf = (node: KnowledgeNode) => !node.children?.length;
+        const currentIsLeaf = ctx.selectedNode ? isLeaf(ctx.selectedNode) : false;
+        const preferRichLeaf =
+          tabs.includes('relatedExam') ||
+          tabs.includes('resource') ||
+          tabs.includes('exam') ||
+          dialogs.includes('leke-question-picker') ||
+          dialogs.includes('knowledge-card-tablet-preview') ||
+          anchors.some((id) => id.includes('related-exam') || id.includes('knowledge-card'));
+
+        if (!currentIsLeaf) {
+          const richLeaf = preferRichLeaf
+            ? walkKnowledgeNodes(
+                ctx.knowledgeTree,
+                (node) =>
+                  isLeaf(node) &&
+                  !!(node.relatedExamPoints?.length || node.knowledgeCard)
+              )
+            : null;
+          const leaf =
+            richLeaf || walkKnowledgeNodes(ctx.knowledgeTree, isLeaf);
+          if (leaf) selectNodeRef.current(leaf);
+        }
+
+        if (tabs.includes('info')) setActiveDetailTab('info');
+        if (tabs.includes('relatedExam')) setActiveDetailTab('relatedExam');
+        if (tabs.includes('resource') || tabs.includes('exam')) setActiveDetailTab('resource');
+
+        const wantsEditEntry = anchors.some((id) => id.endsWith('edit-entry'));
+        const needsEdit =
+          !wantsEditEntry &&
+          (dialogs.includes('batch-import') ||
+            dialogs.includes('leke-question-picker') ||
+            anchors.some(
+              (id) =>
+                id.includes('cancel-edit') ||
+                id.includes('save-edit') ||
+                id.includes('import') ||
+                id.includes('picker') ||
+                id.includes('.add') ||
+                id.includes('delete') ||
+                id.includes('add-keypoint') ||
+                id.includes('add-module') ||
+                id.includes('add-step') ||
+                id.includes('add-exam') ||
+                id.includes('richtext')
+            ));
+
+        if (wantsEditEntry && ctx.isEditingDetail) {
+          setIsEditingDetail(false);
+          knowledgeCardDraftRef.current = undefined;
+          setEditData({});
+        } else if (needsEdit && !ctx.isEditingDetail) {
+          handleEditRef.current();
+        }
+
+        setShowImportDialog(false);
+        setShowAddChildConfirm(false);
+        setPendingDeleteRelatedExam(null);
+
+        if (dialogs.includes('batch-import')) {
+          setShowImportDialog(true);
+        }
+        if (dialogs.includes('add-child-has-detail')) {
+          setShowAddChildConfirm(true);
+        }
+
+        const kcDialog = dialogs.find(
+          (dialog) =>
+            dialog === 'leke-question-picker' || dialog === 'knowledge-card-tablet-preview'
+        );
+        setKcPrdCommand({
+          seq: token,
+          subTab: tabs.includes('exam') || kcDialog === 'leke-question-picker' ? 'exam' : undefined,
+          dialog: kcDialog,
+        });
+
+        await new Promise((resolve) => window.setTimeout(resolve, 180));
+        if (token !== seq) return;
+        window.dispatchEvent(new Event('req-markers-rescan'));
+        if (lastAnchor) {
+          const el = await waitForReqAnchor(lastAnchor);
+          if (token !== seq) return;
+          if (el) highlightReqAnchor(lastAnchor);
+        }
+      })();
+    };
+    window.addEventListener(REQ_PRD_ACTIVATE, onActivate);
+    return () => window.removeEventListener(REQ_PRD_ACTIVATE, onActivate);
+  }, []);
+
+  const getEditingRelatedExamPoints = (): RelatedExamPoint[] =>
+    editData.relatedExamPoints || selectedNode?.relatedExamPoints || [];
+
+  const getEditingKnowledgeCard = (): KnowledgeCard | undefined =>
+    knowledgeCardDraftRef.current || editData.knowledgeCard || selectedNode?.knowledgeCard;
+
+  const commitRelatedExamPoints = (next: RelatedExamPoint[]) => {
+    setEditData((prev) => ({ ...prev, relatedExamPoints: next }));
+  };
+
+  const removeRelatedExamPointById = (examId: string) => {
+    const nextRelated = getEditingRelatedExamPoints().filter((item) => item.id !== examId);
+    const card = getEditingKnowledgeCard();
+    const nextCard = card
+      ? {
+          ...card,
+          examPoints: (card.examPoints || []).filter((item) => item.id !== examId),
+        }
+      : card;
+    if (nextCard) {
+      knowledgeCardDraftRef.current = nextCard;
+    }
+    setEditData((prev) => ({
+      ...prev,
+      relatedExamPoints: nextRelated,
+      ...(nextCard ? { knowledgeCard: nextCard } : {}),
+    }));
+    setPendingDeleteRelatedExam(null);
+  };
+
+  const requestRemoveRelatedExamPoint = (exam: RelatedExamPoint) => {
+    const cardEp = getEditingKnowledgeCard()?.examPoints?.find((item) => item.id === exam.id);
+    if (examPointHasExample(cardEp) || examPointHasDescription(cardEp)) {
+      setPendingDeleteRelatedExam({ id: exam.id, name: exam.name });
+      return;
+    }
+    removeRelatedExamPointById(exam.id);
+  };
+
+  const addRelatedExamPoint = () => {
+    const id = `ep-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    commitRelatedExamPoints([
+      ...getEditingRelatedExamPoints(),
+      { id, name: '', examType: undefined },
+    ]);
+  };
+
+  const validateRelatedExamNameOnBlur = (examId: string) => {
+    const list = getEditingRelatedExamPoints();
+    const current = list.find((item) => item.id === examId);
+    if (!current?.name?.trim()) return;
+    const name = current.name.trim();
+    const duplicated = list.some((item) => item.id !== examId && item.name.trim() === name);
+    if (duplicated) {
+      showRelatedExamToast('考点名称不能重复');
+    }
   };
 
   // 处理拖拽结束
@@ -5036,8 +5482,10 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
             管理{selectedSubject?.name}知识树
           </span>
         </div>
-        {!isTeacher && (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
+          <PrdToggleButton open={prdOpen} onClick={() => setPrdOpen((open) => !open)} />
+          {!isTeacher && (
+            <>
             <button
               type="button"
               onClick={() => {
@@ -5054,8 +5502,9 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
               删除
             </button>
             <PrdTooltip data={prd201.deleteButton} />
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       {(showStatusBar || showEditTip) && (
@@ -5256,70 +5705,71 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                   <div className="flex items-center gap-2">
                     {!isEditingDetail ? (
                       <>
-                        <span className="req-anchor-inline" data-req-anchor="knowledge-tree.info.export">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleExportKnowledgeTree}
-                          >
-                            <Download className="w-4 h-4 mr-1" />
-                            导出知识树
-                          </Button>
-                        </span>
-                        <PrdTooltip data={prd201.exportButton} />
-                        <span className="req-anchor-inline" data-req-anchor="knowledge-tree.info.edit-entry">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleEdit}
-                          >
-                            <Edit className="w-4 h-4 mr-1" />
-                            编辑知识点详情
-                          </Button>
-                        </span>
-                        <PrdTooltip data={prd201.editDetailButton} />
-                      </>
-                    ) : (
-                      <>
-                        <span className="req-anchor-inline" data-req-anchor="knowledge-tree.info.export">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleExportKnowledgeTree}
-                          >
-                            <Download className="w-4 h-4 mr-1" />
-                            导出知识树
-                          </Button>
-                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="req-anchor-inline"
+                          data-req-anchor="knowledge-tree.info.export"
+                          onClick={handleExportKnowledgeTree}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          导出知识树
+                        </Button>
                         <PrdTooltip data={prd201.exportButton} />
                         <Button
                           variant="outline"
                           size="sm"
+                          className="req-anchor-inline"
+                          data-req-anchor="knowledge-tree.info.edit-entry"
+                          onClick={handleEdit}
+                        >
+                          <Edit className="w-4 h-4 mr-1" />
+                          编辑知识点详情
+                        </Button>
+                        <PrdTooltip data={prd201.editDetailButton} />
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="req-anchor-inline"
+                          data-req-anchor="knowledge-tree.info.export"
+                          onClick={handleExportKnowledgeTree}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          导出知识树
+                        </Button>
+                        <PrdTooltip data={prd201.exportButton} />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="req-anchor-inline"
+                          data-req-anchor="knowledge-tree.knowledge-card.batch-import"
                           onClick={() => setShowImportDialog(true)}
                         >
                           <Upload className="w-4 h-4 mr-1" />
                           批量导入
                         </Button>
                         <PrdTooltip data={prd204.editBatchImport} />
-                        <span className="req-anchor-inline" data-req-anchor="knowledge-tree.info.cancel-edit">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleCancel}
-                          >
-                            取消
-                          </Button>
-                        </span>
-                        <span className="req-anchor-inline" data-req-anchor="knowledge-tree.info.save-edit">
-                          <Button
-                            variant="default"
-                            size="sm"
-                            onClick={handleSaveWithPending}
-                            className="bg-emerald-600 hover:bg-emerald-700"
-                          >
-                            保存编辑
-                          </Button>
-                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="req-anchor-inline"
+                          data-req-anchor="knowledge-tree.info.cancel-edit"
+                          onClick={handleCancel}
+                        >
+                          取消
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={handleSaveWithPending}
+                          className="bg-emerald-600 hover:bg-emerald-700 req-anchor-inline"
+                          data-req-anchor="knowledge-tree.info.save-edit"
+                        >
+                          保存编辑
+                        </Button>
                         <PrdTooltip data={prd204.editSaveAction} />
                         <PrdTooltip data={prd204.editGlobalRules} />
                       </>
@@ -5427,6 +5877,21 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                         >
                           知识点信息
                         </button>
+                        <span
+                          className="req-anchor-inline"
+                          data-req-anchor="knowledge-tree.related-exam.tab"
+                        >
+                          <button
+                            onClick={() => setActiveDetailTab('relatedExam')}
+                            className={`flex items-center gap-2 py-3 text-sm font-medium border-b-2 transition-colors ${
+                              activeDetailTab === 'relatedExam'
+                                ? 'text-emerald-600 border-emerald-600'
+                                : 'text-gray-500 border-transparent hover:text-gray-700'
+                            }`}
+                          >
+                            关联考点
+                          </button>
+                        </span>
                         <button
                           onClick={() => setActiveDetailTab('structure')}
                           className={`flex items-center gap-2 py-3 text-sm font-medium border-b-2 transition-colors ${
@@ -5437,16 +5902,21 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                         >
                           知识点结构
                         </button>
-                        <button
-                          onClick={() => setActiveDetailTab('resource')}
-                          className={`flex items-center gap-2 py-3 text-sm font-medium border-b-2 transition-colors ${
-                            activeDetailTab === 'resource'
-                              ? 'text-emerald-600 border-emerald-600'
-                              : 'text-gray-500 border-transparent hover:text-gray-700'
-                          }`}
+                        <span
+                          className="req-anchor-inline"
+                          data-req-anchor="knowledge-tree.resource.tab"
                         >
-                          学习资源
-                        </button>
+                          <button
+                            onClick={() => setActiveDetailTab('resource')}
+                            className={`flex items-center gap-2 py-3 text-sm font-medium border-b-2 transition-colors ${
+                              activeDetailTab === 'resource'
+                                ? 'text-emerald-600 border-emerald-600'
+                                : 'text-gray-500 border-transparent hover:text-gray-700'
+                            }`}
+                          >
+                            学习资源
+                          </button>
+                        </span>
                         <PrdTooltip data={isEditingDetail ? prd204.editTabSwitch : prd201.leafNodeTabs} />
                     </div>
                   </div>
@@ -5463,12 +5933,14 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                     <div className="grid grid-cols-2 gap-4">
                       {/* 学业要求 - 仅叶子节点显示，位于考频左侧 */}
                       {isLeafNode(selectedNode) && (
-                        <div className={`bg-gradient-to-br rounded-xl p-4 border relative overflow-hidden hover:shadow-md transition-shadow ${
+                        <div className={`bg-gradient-to-br rounded-xl p-4 border relative overflow-visible hover:shadow-md transition-shadow ${
                           (isEditingDetail) ? 'from-blue-50 to-white border-blue-300' : 'from-teal-50 to-white border-teal-200'
                         }`} data-req-anchor="knowledge-tree.info.academic-requirement">
-                          <div className={`absolute top-0 right-0 w-20 h-20 rounded-full -mr-10 -mt-10 opacity-40 ${
-                            (isEditingDetail) ? 'bg-blue-100' : 'bg-teal-100'
-                          }`}></div>
+                          <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none" aria-hidden>
+                            <div className={`absolute top-0 right-0 w-20 h-20 rounded-full -mr-10 -mt-10 opacity-40 ${
+                              (isEditingDetail) ? 'bg-blue-100' : 'bg-teal-100'
+                            }`}></div>
+                          </div>
                           <div className="relative">
                             <div className={`flex items-center gap-2 mb-2 ${
                               (isEditingDetail) ? 'text-blue-600' : 'text-teal-600'
@@ -5496,6 +5968,7 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                                 <option value="understand">理解</option>
                                 <option value="master">掌握</option>
                                 <option value="apply">运用</option>
+                                <option value="beyond">超纲</option>
                               </select>
                             ) : (
                               <div className={`text-2xl font-bold leading-none ${
@@ -5512,12 +5985,14 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
 
                       {/* 考频 - 仅叶子节点显示 */}
                       {isLeafNode(selectedNode) && (
-                        <div className={`bg-gradient-to-br rounded-xl p-4 border relative overflow-hidden hover:shadow-md transition-shadow ${
+                        <div className={`bg-gradient-to-br rounded-xl p-4 border relative overflow-visible hover:shadow-md transition-shadow ${
                           (isEditingDetail) ? 'from-blue-50 to-white border-blue-300' : 'from-orange-50 to-white border-orange-200'
                         }`} data-req-anchor="knowledge-tree.info.exam-frequency">
-                          <div className={`absolute top-0 right-0 w-20 h-20 rounded-full -mr-10 -mt-10 opacity-40 ${
-                            (isEditingDetail) ? 'bg-blue-100' : 'bg-orange-100'
-                          }`}></div>
+                          <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none" aria-hidden>
+                            <div className={`absolute top-0 right-0 w-20 h-20 rounded-full -mr-10 -mt-10 opacity-40 ${
+                              (isEditingDetail) ? 'bg-blue-100' : 'bg-orange-100'
+                            }`}></div>
+                          </div>
                           <div className="relative">
                             <div className={`flex items-center gap-2 mb-2 ${
                               (isEditingDetail) ? 'text-blue-600' : 'text-orange-600'
@@ -5817,6 +6292,183 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                 </div>
                 )}
 
+                {/* Tab: 关联考点 */}
+                {activeDetailTab === 'relatedExam' && (
+                  <div className="space-y-3">
+                    {(() => {
+                      const list = isEditingDetail
+                        ? editData.relatedExamPoints || []
+                        : selectedNode.relatedExamPoints || [];
+                      if (list.length === 0) {
+                        return (
+                          <div
+                            className="text-center py-10 text-gray-400 rounded-lg border border-dashed border-gray-200"
+                            data-req-anchor="knowledge-tree.related-exam.empty"
+                          >
+                            <FileText className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">暂无考点</p>
+                            {isEditingDetail && (
+                              <p className="text-xs mt-1">点击下方按钮添加，或通过导入批量维护</p>
+                            )}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-2">
+                          <div
+                            className="text-xs text-gray-500 req-anchor-inline"
+                            data-req-anchor="knowledge-tree.related-exam.count"
+                          >
+                            共 <span className="font-medium text-gray-700">{list.length}</span> 个考点
+                          </div>
+                          <div
+                            className="border border-gray-200 rounded-lg overflow-hidden"
+                            data-req-anchor="knowledge-tree.related-exam.table"
+                          >
+                            <div className="overflow-x-auto">
+                              <table className="w-full min-w-[380px] table-fixed text-sm">
+                                <thead>
+                                  <tr className="bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500">
+                                    <th className="px-3 py-2.5 font-medium text-left">名称</th>
+                                    <th
+                                      className={`px-3 py-2.5 font-medium text-center border-l border-gray-200 ${
+                                        isEditingDetail ? 'w-[140px]' : 'w-[120px]'
+                                      }`}
+                                    >
+                                      类型
+                                    </th>
+                                    {isEditingDetail && (
+                                      <th
+                                        className="w-[56px] px-2 py-2.5 font-medium text-center border-l border-gray-200"
+                                      >
+                                        <span className="inline-flex items-center justify-center gap-1">
+                                          操作
+                                          {!pendingDeleteRelatedExam && (
+                                            <span
+                                              className="req-marker-slot"
+                                              data-req-anchor="knowledge-tree.related-exam.delete"
+                                              aria-hidden="true"
+                                            />
+                                          )}
+                                        </span>
+                                      </th>
+                                    )}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {list.map((exam) => {
+                                    const typeMeta = examTypeMeta(exam.examType);
+                                    return (
+                                      <tr
+                                        key={exam.id}
+                                        className="border-b border-gray-100 last:border-b-0 align-middle"
+                                      >
+                                        <td className="px-3 py-2.5 text-left">
+                                          {isEditingDetail ? (
+                                            <input
+                                              value={exam.name}
+                                              onChange={(e) => {
+                                                const next = getEditingRelatedExamPoints().map(
+                                                  (item) =>
+                                                    item.id === exam.id
+                                                      ? { ...item, name: e.target.value }
+                                                      : item
+                                                );
+                                                commitRelatedExamPoints(next);
+                                              }}
+                                              onBlur={() => validateRelatedExamNameOnBlur(exam.id)}
+                                              placeholder="请输入名称"
+                                              className="w-full text-sm border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                            />
+                                          ) : (
+                                            <span className="text-gray-900 break-words leading-6">
+                                              {exam.name}
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2.5 border-l border-gray-100 text-center">
+                                          {isEditingDetail ? (
+                                            <select
+                                              value={exam.examType || ''}
+                                              onChange={(e) => {
+                                                const raw = e.target.value;
+                                                const nextType = raw
+                                                  ? (raw as (typeof EXAM_POINT_TYPES)[number]['id'])
+                                                  : undefined;
+                                                const next = getEditingRelatedExamPoints().map(
+                                                  (item) =>
+                                                    item.id === exam.id
+                                                      ? { ...item, examType: nextType }
+                                                      : item
+                                                );
+                                                commitRelatedExamPoints(next);
+                                              }}
+                                              className="block mx-auto w-full max-w-[128px] h-8 text-xs border border-gray-200 rounded-md px-2 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                            >
+                                              <option value="">请选择类型</option>
+                                              {EXAM_POINT_TYPES.map((opt) => (
+                                                <option key={opt.id} value={opt.id}>
+                                                  {opt.label}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          ) : typeMeta ? (
+                                            <span
+                                              className={`inline-flex items-center justify-center h-6 px-2 rounded-md text-xs border whitespace-nowrap ${typeMeta.tagClass}`}
+                                            >
+                                              {typeMeta.label}
+                                            </span>
+                                          ) : (
+                                            <span className="text-xs text-gray-400">未设置</span>
+                                          )}
+                                        </td>
+                                        {isEditingDetail && (
+                                          <td className="px-2 py-2.5 border-l border-gray-100">
+                                            <div className="flex items-center justify-center">
+                                              <button
+                                                type="button"
+                                                className="p-1 rounded hover:bg-red-50 text-red-400"
+                                                title="删除"
+                                                onClick={() =>
+                                                  requestRemoveRelatedExamPoint(exam)
+                                                }
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            </div>
+                                          </td>
+                                        )}
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {isEditingDetail && (
+                      <span className="req-anchor-inline block w-full">
+                        <button
+                          type="button"
+                          onClick={addRelatedExamPoint}
+                          className="w-full h-9 text-sm font-medium rounded-lg border border-dashed border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50 hover:border-emerald-400 inline-flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                          添加考点
+                        </button>
+                        <span
+                          className="req-marker-slot"
+                          data-req-anchor="knowledge-tree.related-exam.add"
+                          aria-hidden="true"
+                        />
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Tab: 知识点结构 */}
                 {activeDetailTab === 'structure' && (
                   <div className="space-y-4">
@@ -6082,6 +6734,36 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                       key={selectedNode.id}
                       nodeId={selectedNode.id}
                       isEditing={isEditingDetail}
+                      prdCommand={kcPrdCommand}
+                      previewTitle={selectedNode.name}
+                      previewAcademicRequirementLabel={
+                        (isEditingDetail
+                          ? editData.academicRequirement
+                          : selectedNode.academicRequirement)
+                          ? academicRequirementMap[
+                              (isEditingDetail
+                                ? editData.academicRequirement
+                                : selectedNode.academicRequirement)!
+                            ]
+                          : undefined
+                      }
+                      previewExamFrequencyLabel={
+                        (isEditingDetail
+                          ? editData.examFrequency
+                          : selectedNode.examFrequency)
+                          ? examFrequencyMap[
+                              (isEditingDetail
+                                ? editData.examFrequency
+                                : selectedNode.examFrequency) || ''
+                            ]
+                          : undefined
+                      }
+                      relatedExamPoints={
+                        isEditingDetail
+                          ? editData.relatedExamPoints || []
+                          : selectedNode.relatedExamPoints || []
+                      }
+                      onGoMaintainExams={() => setActiveDetailTab('relatedExam')}
                       value={
                         isEditingDetail
                           ? editData.knowledgeCard
@@ -6526,7 +7208,15 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
   );
 
   return (
-    <div className={selectedSubject ? 'flex flex-col h-full min-h-0' : 'space-y-4'}>
+    <div
+      className={`prd-reader-shell${prdOpen ? ' is-prd-open' : ''}${selectedSubject ? ' h-full min-h-0' : ''}`}
+      style={{
+        gridTemplateColumns: prdOpen ? `minmax(0, 1fr) ${prdWidth}px` : 'minmax(0, 1fr)',
+        ['--prd-panel-width' as string]: `${prdWidth}px`,
+        ['--prd-panel-offset' as string]: prdOpen ? `${prdWidth}px` : '0px',
+      }}
+    >
+      <div className={`prd-prototype-area${selectedSubject ? ' flex flex-col h-full min-h-0' : ' space-y-4'}`}>
       {/* 顶部学段筛选 - 仅在未选择学科时显示 */}
       {!selectedSubject && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -6550,13 +7240,16 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                 </button>
               ))}
             </div>
-            <button
+            <div className="flex items-center gap-2">
+              <PrdToggleButton open={prdOpen} onClick={() => setPrdOpen((open) => !open)} />
+              <button
               onClick={() => setShowAggregateHistory(true)}
               className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
             >
               <History className="w-4 h-4" />
               查看历史发布记录
             </button>
+            </div>
           </div>
         </div>
       )}
@@ -7051,9 +7744,45 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
         </div>
       )}
 
+      {/* 删除关联考点确认（已关联例题时） */}
+      {pendingDeleteRelatedExam && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div
+            className="bg-white rounded-lg shadow-xl w-[440px]"
+            data-req-anchor="knowledge-tree.related-exam.delete"
+          >
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="font-semibold text-gray-900">确认删除关联考点</h3>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-gray-600">
+                确定删除当前考点吗？（删除后，知识卡片中对应内容将一并删除）
+              </p>
+            </div>
+            <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                onClick={() => setPendingDeleteRelatedExam(null)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => removeRelatedExamPointById(pendingDeleteRelatedExam.id)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 添加子节点确认弹窗 - 当末级知识点有详细内容时 */}
       {showAddChildConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          data-req-surface="dialog"
+        >
           <div className="bg-white rounded-lg shadow-xl w-[450px]">
             <div className="p-4">
               <p className="text-gray-600 mb-4">确定为该知识点添加子节点吗？</p>
@@ -7061,7 +7790,9 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-gray-800 font-medium mb-1">该知识点已有详细内容</p>
+                    <p className="text-gray-800 font-medium mb-1 req-anchor-inline" data-req-anchor="knowledge-tree.add-child-has-detail">
+                      该知识点已有详细内容
+                    </p>
                     <p className="text-gray-600 text-sm">
                       添加子知识点后，该知识点将变为非末级节点，其知识点信息、知识点结构和学习资源将无法继续维护。
                     </p>
@@ -7099,7 +7830,10 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
 
       {/* 批量导入弹窗 - 上传态 */}
       {showImportDialog && (importValidationStatus === 'idle') && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          data-req-surface="import"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100]"
+        >
           <div className="bg-white rounded-xl shadow-xl w-[600px] max-h-[90vh] overflow-hidden flex flex-col">
             {/* 头部 */}
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
@@ -7128,25 +7862,37 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                       <li>请先下载模板文件，按照模板格式填写知识点数据</li>
                       <li>二级标题为必填项，三、四、五级标题根据实际情况填写</li>
                       <li>前置知识点如有多个，用顿号（、）间隔</li>
-                      <li>学业要求可选值：了解、理解、掌握、运用</li>
+                      <li>学业要求可选值：了解、理解、掌握、运用、超纲</li>
                       <li>考频可选值：高频、中频、低频</li>
+                      <li>
+                        考点名称、考点类型仅末级可填；可只填名称、不能只填类型；两列都填时多个用顿号（、）间隔且按顺序一一对应
+                      </li>
+                      <li>考点类型可选值：基础达标、综合进阶、高分冲刺</li>
                     </ul>
                   </div>
-                  <span className="req-anchor-inline" data-req-anchor="knowledge-tree.info.import-template">
-                    <button 
-                      onClick={handleDownloadTemplate}
-                      className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex-shrink-0"
-                    >
-                      <Download className="w-4 h-4" />
-                      下载模板
-                    </button>
-                  </span>
+                  <div className="flex items-start gap-1 flex-shrink-0">
+                    <span className="req-anchor-inline" data-req-anchor="knowledge-tree.info.import-template">
+                      <button 
+                        onClick={handleDownloadTemplate}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex-shrink-0"
+                      >
+                        <Download className="w-4 h-4" />
+                        下载模板
+                      </button>
+                    </span>
+                    <span
+                      className="req-anchor-inline shrink-0"
+                      data-req-anchor="knowledge-tree.related-exam.import-template"
+                      aria-hidden
+                      style={{ width: 20, minWidth: 20, height: 28, minHeight: 28 }}
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* 上传区域 */}
               <div 
-                className="border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer border-gray-300 hover:border-emerald-500"
+                className="relative border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer border-gray-300 hover:border-emerald-500"
                 data-req-anchor="knowledge-tree.info.import-validation"
                 onClick={() => {
                   const input = document.createElement('input');
@@ -7161,6 +7907,12 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                   input.click();
                 }}
               >
+                <span
+                  className="req-anchor-inline absolute top-2 left-2"
+                  data-req-anchor="knowledge-tree.related-exam.import-validation"
+                  aria-hidden
+                  style={{ width: 20, minWidth: 20, height: 20, minHeight: 20 }}
+                />
                 <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                 <p className="text-gray-700 font-medium mb-2">拖拽文件到此处或点击上传</p>
                 <p className="text-gray-400 text-sm">支持 Excel (.xlsx, .xls) 格式</p>
@@ -7443,14 +8195,33 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
         }}
       />
       
-      {/* 业务逻辑文档面板 */}
-      <DocPanel currentPath="/system-settings/knowledge-tree" />
-
-      {/* Skill3：学业要求增量需求角标（读 Skill2 注册表 logicSections） */}
+      {/* Skill3：知识点信息、关联考点、知识卡片；顶栏导出/保存/批量导入已挂。KT_KC-018 与保存顶栏合并；KT_RE-013 已并入 KT_INFO_AR-009，不挂第二枚。 */}
       <RequirementMarkerHost
-        registryId="knowledge-tree-info-academic-requirement"
-        refreshKey={`${isEditingDetail}-${showImportDialog}-${selectedNode?.id ?? ''}-${activeDetailTab}`}
+        scopeId={KNOWLEDGE_TREE_DETAIL_SCOPE_ID}
+        registryIds={[...KNOWLEDGE_TREE_DETAIL_REGISTRY_IDS]}
+        excludeIds={[...KNOWLEDGE_TREE_DETAIL_EXCLUDE_IDS]}
+        refreshKey={`${isEditingDetail}-${showImportDialog}-${importValidationStatus}-${selectedNode?.id ?? ''}-${activeDetailTab}-${pendingDeleteRelatedExam?.id ?? ''}-${showAddChildConfirm}-${kcPrdCommand?.seq ?? 0}-${(isEditingDetail ? editData.relatedExamPoints : selectedNode?.relatedExamPoints)?.length ?? 0}`}
       />
+
+      {relatedExamToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-lg shadow-lg text-sm flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {relatedExamToast}
+        </div>
+      )}
+      </div>
+      {prdOpen ? (
+        <RequirementPanel
+          scopeId={KNOWLEDGE_TREE_DETAIL_SCOPE_ID}
+          registryIds={KNOWLEDGE_TREE_DETAIL_REGISTRY_IDS}
+          excludeIds={KNOWLEDGE_TREE_DETAIL_EXCLUDE_IDS}
+          width={prdWidth}
+          onWidthChange={setPrdWidth}
+          onClose={() => setPrdOpen(false)}
+          kicker="末级知识点 · 详情"
+          ariaLabel="通用知识树 PRD 阅读面板"
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   CheckCircle2,
@@ -51,6 +51,9 @@ export type RowErrorType =
   | 'prerequisite-duplicate' // 前置知识点重复填写
   | 'strategy-not-found'     // 出题策略不存在
   | 'strategy-format'        // 出题策略填写格式不合法
+  | 'exam-point-invalid'     // 考点名称/类型不合法
+  | 'exam-point-not-leaf'    // 非末级节点填写关联考点
+  | 'exam-point-mismatch'    // 考点名称与类型不成对或不一致
   | 'other';                 // 其他业务校验失败
 
 /** 文件级错误详情 */
@@ -126,13 +129,16 @@ const ROW_ERROR_CONFIG: Record<RowErrorType, { label: string; description: strin
   'duplicate-node': { label: '同一节点重复导入', description: '当前文件中存在多个相同标题路径的数据行' },
   'exam-freq-invalid': { label: '考频填写不合法', description: '考频仅支持填写"高频 / 中频 / 低频"' },
   'exam-freq-not-leaf': { label: '非末级节点填写考频', description: '考频仅允许填写在末级知识点行' },
-  'academic-req-invalid': { label: '学业要求填写不合法', description: '学业要求仅支持填写"了解 / 理解 / 掌握 / 运用"' },
+  'academic-req-invalid': { label: '学业要求填写不合法', description: '学业要求仅支持填写"了解 / 理解 / 掌握 / 运用 / 超纲"' },
   'academic-req-not-leaf': { label: '非末级节点填写学业要求', description: '学业要求仅允许填写在末级知识点行' },
   'prerequisite-not-found': { label: '前置知识点不存在', description: '填写的前置知识点在线上知识树中不存在' },
   'prerequisite-self': { label: '前置知识点包含自身', description: '前置知识点不能包含当前知识点自身' },
   'prerequisite-duplicate': { label: '前置知识点重复填写', description: '前置知识点存在重复项' },
   'strategy-not-found': { label: '出题策略不存在', description: '填写的出题策略名称未在系统中找到对应个性化策略' },
   'strategy-format': { label: '出题策略格式不合法', description: '当前字段仅支持填写单个已存在的个性化策略名称' },
+  'exam-point-invalid': { label: '关联考点填写不合法', description: '考点名称重复或考点类型不是约定枚举值' },
+  'exam-point-not-leaf': { label: '非末级节点填写关联考点', description: '关联考点仅允许填写在末级知识点行' },
+  'exam-point-mismatch': { label: '考点名称与类型不成对', description: '不能只填考点类型；名称与类型都填时须数量、顺序一一对应' },
   'other': { label: '其他校验失败', description: '其他业务校验未通过' },
 };
 
@@ -476,10 +482,21 @@ export default function ImportValidationModal({
     }));
   }, [rowResults]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    window.dispatchEvent(new Event('req-markers-rescan'));
+    return () => {
+      window.dispatchEvent(new Event('req-markers-rescan'));
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div
+      data-req-surface="import"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100]"
+    >
       <div className="bg-white rounded-xl shadow-xl w-[860px] max-h-[85vh] overflow-hidden flex flex-col">
         {/* ===== A. 弹窗头部 ===== */}
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">

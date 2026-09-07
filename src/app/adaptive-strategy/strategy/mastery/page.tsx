@@ -18,8 +18,6 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import PageLayout from '@/components/shared/PageLayout';
-import DocPanel from '@/components/shared/DocPanel';
-
 // 学段类型
 type PhaseType = 'high' | 'middle' | 'primary';
 
@@ -1341,8 +1339,6 @@ export default function MasteryLevelPage() {
         pageStateAll={pageStateAll}
       />
 
-      {/* 业务逻辑文档面板 */}
-      <DocPanel currentPath="/adaptive-strategy/strategy/mastery" />
     </PageLayout>
   );
 }

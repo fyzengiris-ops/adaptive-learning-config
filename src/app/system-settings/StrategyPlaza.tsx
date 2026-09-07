@@ -12,8 +12,6 @@ import {
   Settings2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import DocPanel from '@/components/shared/DocPanel';
-
 // 策略卡片数据类型
 interface StrategyCard {
   id: string;
@@ -252,8 +250,6 @@ export default function StrategyPlaza() {
         <StrategyGroup key={module.title} {...module} />
       ))}
 
-      {/* 业务逻辑文档面板 */}
-      <DocPanel currentPath="/system-settings/strategy-plaza" />
     </div>
   );
 }

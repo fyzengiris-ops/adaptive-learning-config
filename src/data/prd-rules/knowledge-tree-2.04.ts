@@ -51,7 +51,7 @@ export const editAcademicRequirementCard: PrdTooltipData = {
   title: '学业要求-编辑',
   rules: [
     { category: '字段规则', content: '卡片标题显示文案「学业要求」' },
-    { category: '字段规则', content: '编辑态下学业要求显示为下拉选择框，可选值：「了解」「理解」「掌握」「运用」，以及「未设置」' },
+    { category: '字段规则', content: '编辑态下学业要求显示为下拉选择框，可选值：「了解」「理解」「掌握」「运用」「超纲」，以及「未设置」' },
     { category: '显示规则', content: '仅叶子节点显示学业要求卡片，位置在考频卡片左侧' },
     { category: '显示规则', content: '非必填；未配置时为未设置态，不默认带入具体值' },
     { category: '交互规则', content: '选择后即时写入当前编辑结果，点击「保存编辑」后统一提交' },
@@ -347,7 +347,7 @@ export const editBatchImport: PrdTooltipData = {
     { category: '交互规则', content: '点击「批量导入」按钮后，弹出批量导入弹窗' },
     { category: '交互规则', content: '批量导入支持一次性导入多个知识点的学业要求、考频、策略等信息' },
     { category: '数据规则', content: '批量导入后的数据需通过「保存编辑」统一提交保存' },
-    { category: '显示规则', content: '弹窗导入说明为感叹号 + 标题「导入说明」，列表含：下载模板填写；二级标题必填、三四级按实际情况；前置多个用顿号；学业要求可选了解/理解/掌握/运用；考频可选高频/中频/低频' },
+    { category: '显示规则', content: '弹窗导入说明为感叹号 + 标题「导入说明」，列表含：下载模板填写；二级标题必填、三四级按实际情况；前置多个用顿号；学业要求可选了解/理解/掌握/运用/超纲；考频可选高频/中频/低频' },
     { category: '数据规则', content: '完整填写规则以 Excel 模板顶行为准；留空不更新、【清空】清空线上对应字段——业务口径写入 PRD，原型可不实现真实写回' },
     { category: '校验规则', content: '导入文件格式限制：Excel (.xlsx, .xls)' },
     { category: '校验规则', content: '导入文件需按模板格式填写，标题列用于定位线上已有节点' },

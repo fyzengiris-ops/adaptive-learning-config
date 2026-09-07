@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { BookOpen, ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import {
   AlertDialog,
@@ -31,32 +32,6 @@ export interface BankQuestion {
   steps: Array<{ title: string; detail: string }>;
   tips: string[];
 }
-
-const QUESTION_TYPES = [
-  '单选题',
-  '多选题',
-  '填空题',
-  '判断题',
-  '问答题',
-  '解答题',
-  '计算题',
-  '应用题',
-  '手写题',
-];
-
-const DIFFICULTIES = ['容易', '较易', '一般', '较难', '困难'];
-const CATEGORIES = ['基础题', '拔高题', '综合题'];
-const LEVELS = ['名师', '精品'];
-
-const PURPOSE_OPTIONS: Array<{
-  id: 'sync' | 'review' | 'exam';
-  label: string;
-  children?: string[];
-}> = [
-  { id: 'sync', label: '同步新课' },
-  { id: 'review', label: '阶段性复习', children: ['月考', '期中', '期末'] },
-  { id: 'exam', label: '升学频道', children: ['学业水平', '自主招生', '高考'] },
-];
 
 export const MOCK_BANK_QUESTIONS: BankQuestion[] = [
   {
@@ -220,82 +195,6 @@ export const MOCK_BANK_QUESTIONS: BankQuestion[] = [
   },
 ];
 
-function chipClass(active: boolean, variant: 'primary' | 'sub' = 'primary') {
-  if (variant === 'sub') {
-    return `px-2.5 py-1 rounded-full text-xs transition-colors ${
-      active
-        ? 'bg-white text-emerald-700 ring-1 ring-emerald-300 shadow-sm'
-        : 'text-gray-500 hover:text-gray-700 hover:bg-white/80'
-    }`;
-  }
-  return `px-2.5 py-1 rounded-full text-xs transition-colors ${
-    active
-      ? 'bg-emerald-600 text-white shadow-sm'
-      : 'bg-white text-gray-600 ring-1 ring-gray-200 hover:ring-emerald-200 hover:text-emerald-700'
-  }`;
-}
-
-function FilterChips({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: string[];
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <div className="flex items-start gap-3">
-      <span className="text-xs text-gray-400 w-9 shrink-0 pt-1.5 text-right leading-none">
-        {label}
-      </span>
-      <div className="flex flex-wrap gap-1.5">
-        <button type="button" onClick={() => onChange('all')} className={chipClass(value === 'all')}>
-          全部
-        </button>
-        {options.map((opt) => (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => onChange(opt)}
-            className={chipClass(value === opt)}
-          >
-            {opt}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const DIFFICULTY_TONE: Record<string, string> = {
-  容易: 'bg-emerald-50 text-emerald-700',
-  较易: 'bg-teal-50 text-teal-700',
-  一般: 'bg-sky-50 text-sky-700',
-  较难: 'bg-amber-50 text-amber-700',
-  困难: 'bg-rose-50 text-rose-700',
-};
-
-function MetaTag({
-  children,
-  className = 'bg-gray-50 text-gray-500',
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <span className={`text-[11px] px-2 py-0.5 rounded-full ${className}`}>{children}</span>
-  );
-}
-
-function purposeLabel(q: BankQuestion) {
-  const option = PURPOSE_OPTIONS.find((item) => item.id === q.purpose);
-  if (!option) return null;
-  return q.purposeSub ? `${option.label}·${q.purposeSub}` : option.label;
-}
-
 interface LekeQuestionPickerProps {
   open: boolean;
   hasExistingContent: boolean;
@@ -309,52 +208,32 @@ export default function LekeQuestionPicker({
   onClose,
   onSelect,
 }: LekeQuestionPickerProps) {
-  const [sourceTab, setSourceTab] = useState<BankSource>('leke');
-  const [purpose, setPurpose] = useState<'all' | 'sync' | 'review' | 'exam'>('all');
-  const [purposeSub, setPurposeSub] = useState('all');
-  const [questionType, setQuestionType] = useState('all');
-  const [category, setCategory] = useState('all');
-  const [difficulty, setDifficulty] = useState('all');
-  const [level, setLevel] = useState('all');
+  const [keyword, setKeyword] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pending, setPending] = useState<BankQuestion | null>(null);
-  const [filterOpen, setFilterOpen] = useState(true);
-
-  const purposeChildren = PURPOSE_OPTIONS.find((p) => p.id === purpose)?.children;
 
   const list = useMemo(() => {
-    return MOCK_BANK_QUESTIONS.filter((q) => {
-      if (q.source !== sourceTab) return false;
-      if (questionType !== 'all' && q.questionType !== questionType) return false;
-      if (difficulty !== 'all' && q.difficulty !== difficulty) return false;
-      if (sourceTab !== 'leke') return true;
-      if (purpose !== 'all' && q.purpose !== purpose) return false;
-      if (purpose !== 'all' && purposeSub !== 'all' && q.purposeSub !== purposeSub) return false;
-      if (category !== 'all' && q.category !== category) return false;
-      if (level !== 'all' && q.level !== level) return false;
-      return true;
-    });
-  }, [sourceTab, purpose, purposeSub, questionType, category, difficulty, level]);
+    const q = keyword.trim().toLowerCase();
+    if (!q) return MOCK_BANK_QUESTIONS;
+    return MOCK_BANK_QUESTIONS.filter((item) => item.stem.toLowerCase().includes(q));
+  }, [keyword]);
+
+  useEffect(() => {
+    if (!open) return;
+    window.dispatchEvent(new Event('req-markers-rescan'));
+    return () => {
+      window.dispatchEvent(new Event('req-markers-rescan'));
+    };
+  }, [open]);
 
   if (!open) return null;
 
-  const switchSource = (next: BankSource) => {
-    setSourceTab(next);
-    setPurpose('all');
-    setPurposeSub('all');
-    setQuestionType('all');
-    setCategory('all');
-    setDifficulty('all');
-    setLevel('all');
-    setExpandedId(null);
-  };
-
-  const requestSelect = (q: BankQuestion) => {
+  const requestSelect = (question: BankQuestion) => {
     if (hasExistingContent) {
-      setPending(q);
+      setPending(question);
       return;
     }
-    onSelect(q);
+    onSelect(question);
   };
 
   const confirmSelect = () => {
@@ -363,179 +242,54 @@ export default function LekeQuestionPicker({
     setPending(null);
   };
 
-  return (
+  const handleClose = () => {
+    setKeyword('');
+    setExpandedId(null);
+    setPending(null);
+    onClose();
+  };
+
+  return createPortal(
     <>
-      <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-5">
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[88vh] overflow-hidden flex flex-col">
+      <div
+        data-req-surface="picker"
+        className="fixed inset-0 z-[1100] bg-black/50 flex items-center justify-center p-5"
+      >
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[88vh] overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 bg-gray-50 shrink-0">
             <div className="flex items-center gap-2">
               <BookOpen className="w-5 h-5 text-emerald-600" />
-              <h3 className="text-base font-semibold text-gray-900">典型例题</h3>
+              <h3 className="text-base font-semibold text-gray-900">
+                <span
+                  className="req-anchor-inline"
+                  data-req-anchor="knowledge-tree.knowledge-card.picker"
+                >
+                  典型例题
+                </span>
+              </h3>
             </div>
             <button
               type="button"
               className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors"
-              onClick={onClose}
+              onClick={handleClose}
             >
               <X className="w-5 h-5 text-gray-500" />
             </button>
           </div>
 
-          <div className="px-5 border-b border-gray-200 shrink-0">
-            <div className="flex gap-6">
-              {(
-                [
-                  { id: 'leke' as const, label: '乐课网' },
-                  { id: 'third_party' as const, label: '第三方平台' },
-                ]
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => switchSource(tab.id)}
-                  className={`relative py-3 text-sm font-medium transition-colors ${
-                    sourceTab === tab.id
-                      ? 'text-emerald-600'
-                      : 'text-gray-500 hover:text-gray-800'
-                  }`}
-                >
-                  {tab.label}
-                  {sourceTab === tab.id && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600" />
-                  )}
-                </button>
-              ))}
+          <div className="px-5 pt-4 pb-3 shrink-0 space-y-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="搜索题干关键词"
+                className="w-full h-9 pl-9 pr-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
             </div>
-          </div>
-
-          <div className="px-5 pt-3 pb-3 shrink-0">
-            <div className="rounded-xl bg-slate-50/80 border border-slate-100 overflow-hidden">
-              <button
-                type="button"
-                className="w-full flex items-center justify-between px-4 py-2 text-left"
-                onClick={() => setFilterOpen((v) => !v)}
-              >
-                <span className="text-xs text-gray-500">筛选</span>
-                <span
-                  className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                    filterOpen ? 'bg-emerald-50 text-emerald-600' : 'bg-white text-gray-400'
-                  }`}
-                >
-                  {filterOpen ? (
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  )}
-                </span>
-              </button>
-              {filterOpen && (
-              <div className="px-4 pb-3 space-y-2.5">
-              {sourceTab === 'leke' && (
-                <>
-                  <div className="flex items-start gap-3">
-                    <span className="text-xs text-gray-400 w-9 shrink-0 pt-1.5 text-right leading-none">
-                      用途
-                    </span>
-                    <div className="flex-1 space-y-2">
-                      <div className="flex flex-wrap gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPurpose('all');
-                            setPurposeSub('all');
-                          }}
-                          className={chipClass(purpose === 'all')}
-                        >
-                          全部
-                        </button>
-                        {PURPOSE_OPTIONS.map((opt) => (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => {
-                              setPurpose(opt.id);
-                              setPurposeSub('all');
-                            }}
-                            className={chipClass(purpose === opt.id)}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                      {purposeChildren && (
-                        <div className="flex flex-wrap gap-1.5 pl-0.5">
-                          <button
-                            type="button"
-                            onClick={() => setPurposeSub('all')}
-                            className={chipClass(purposeSub === 'all', 'sub')}
-                          >
-                            全部
-                          </button>
-                          {purposeChildren.map((sub) => (
-                            <button
-                              key={sub}
-                              type="button"
-                              onClick={() => setPurposeSub(sub)}
-                              className={chipClass(purposeSub === sub, 'sub')}
-                            >
-                              {sub}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <FilterChips
-                    label="题型"
-                    options={QUESTION_TYPES}
-                    value={questionType}
-                    onChange={setQuestionType}
-                  />
-                  <FilterChips
-                    label="类型"
-                    options={CATEGORIES}
-                    value={category}
-                    onChange={setCategory}
-                  />
-                  <FilterChips
-                    label="难度"
-                    options={DIFFICULTIES}
-                    value={difficulty}
-                    onChange={setDifficulty}
-                  />
-                  <FilterChips
-                    label="级别"
-                    options={LEVELS}
-                    value={level}
-                    onChange={setLevel}
-                  />
-                </>
-              )}
-              {sourceTab === 'third_party' && (
-                <>
-                  <FilterChips
-                    label="题型"
-                    options={QUESTION_TYPES}
-                    value={questionType}
-                    onChange={setQuestionType}
-                  />
-                  <FilterChips
-                    label="难度"
-                    options={DIFFICULTIES}
-                    value={difficulty}
-                    onChange={setDifficulty}
-                  />
-                </>
-              )}
-              </div>
-              )}
-            </div>
-          </div>
-
-          <div className="px-5 pb-2 flex items-center justify-between shrink-0">
-            <span className="text-xs text-gray-400">
+            <div className="text-xs text-gray-400">
               共 <span className="text-gray-600 font-medium">{list.length}</span> 题
-            </span>
+            </div>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 space-y-3">
@@ -562,22 +316,9 @@ export default function LekeQuestionPicker({
                       onClick={() => setExpandedId(expanded ? null : q.id)}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                            {q.source === 'leke' && purposeLabel(q) && (
-                              <MetaTag>{purposeLabel(q)}</MetaTag>
-                            )}
-                            <MetaTag>{q.questionType}</MetaTag>
-                            {q.category && <MetaTag>{q.category}</MetaTag>}
-                            <MetaTag className={DIFFICULTY_TONE[q.difficulty] || 'bg-gray-50 text-gray-500'}>
-                              {q.difficulty}
-                            </MetaTag>
-                            {q.level && <MetaTag>{q.level}</MetaTag>}
-                          </div>
-                          <p className="text-[13px] text-gray-800 whitespace-pre-wrap leading-[1.7]">
-                            {q.stem}
-                          </p>
-                        </div>
+                        <p className="flex-1 min-w-0 text-[13px] text-gray-800 whitespace-pre-wrap leading-[1.7]">
+                          {q.stem}
+                        </p>
                         <span
                           className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
                             expanded
@@ -619,13 +360,28 @@ export default function LekeQuestionPicker({
                     )}
 
                     <div className="px-4 py-2.5 border-t border-gray-100 flex items-center justify-end">
-                      <button
-                        type="button"
-                        className="h-8 px-4 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-                        onClick={() => requestSelect(q)}
-                      >
-                        选用
-                      </button>
+                      {list.indexOf(q) === 0 ? (
+                        <span
+                          className="req-anchor-inline"
+                          data-req-anchor="knowledge-tree.knowledge-card.picker-select"
+                        >
+                          <button
+                            type="button"
+                            className="h-8 px-4 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                            onClick={() => requestSelect(q)}
+                          >
+                            选用
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="h-8 px-4 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                          onClick={() => requestSelect(q)}
+                        >
+                          选用
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -636,7 +392,7 @@ export default function LekeQuestionPicker({
       </div>
 
       <AlertDialog open={!!pending} onOpenChange={(next) => !next && setPending(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="z-[1300]" overlayClassName="z-[1300]">
           <AlertDialogHeader>
             <AlertDialogTitle>覆盖已有例题？</AlertDialogTitle>
             <AlertDialogDescription>
@@ -654,8 +410,7 @@ export default function LekeQuestionPicker({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </>,
+    document.body
   );
 }
-
-

@@ -41,7 +41,6 @@ import {
   Video,
   ClipboardList,
   Clock,
-  User,
   Award,
   Download,
   Upload,
@@ -70,9 +69,22 @@ import AggregateHistoryModal, { AggregateHistoryItem } from '@/components/shared
 import KnowledgeSelectorTree, { getBatchChildIds } from '@/components/shared/KnowledgeSelectorTree';
 import KnowledgeNetworkGraph from '@/components/shared/KnowledgeNetworkGraph';
 import SectionKnowledgeGraph from '@/components/shared/SectionKnowledgeGraph';
-import DocPanel from '@/components/shared/DocPanel';
 import TextbookImportValidationModal from '@/components/shared/TextbookImportValidationModal';
 import PrdTooltip from '@/components/shared/PrdTooltip';
+import RequirementMarkerHost from '@/components/prd/RequirementMarkerHost';
+import RequirementPanel, { PrdToggleButton } from '@/components/prd/RequirementPanel';
+import {
+  TEXTBOOK_CHAPTER_COURSE_EXCLUDE_IDS,
+  TEXTBOOK_CHAPTER_COURSE_REGISTRY_IDS,
+  TEXTBOOK_CHAPTER_COURSE_SCOPE_ID,
+} from '@/data/requirements/textbookChapterCourseMarkers';
+import {
+  highlightReqAnchor,
+  REQ_PRD_ACTIVATE,
+  syncPrdPanelOffset,
+  waitForReqAnchor,
+  type ReqPrdActivateDetail,
+} from '@/lib/requirementPrdEvents';
 import * as prd200 from '@/data/prd-rules/textbook-tree-2.00';
 import * as prd205 from '@/data/prd-rules/textbook-tree-2.05';
 import * as prd206 from '@/data/prd-rules/textbook-tree-2.06';
@@ -85,6 +97,28 @@ import knowledgeTreeData from '@/data/knowledge-tree.json';
 import { knowledgeTreeData as knowledgeRelationsData, findKnowledgeRelationsByName, findKnowledgeNodeById, findKnowledgeNodeById as findKnowledgeNodeByIdFromRelations } from '@/data/knowledge-relations';
 
 // 教材数据类型
+type ChapterCourseMode = 'dual' | 'syncAsOverview' | 'syncIndependent' | 'noSync';
+type ChapterCourseKind = 'sync' | 'topic' | 'extension';
+type CourseSelectorTarget = 'leaf' | ChapterCourseKind;
+type ExamSelectorTarget = 'exams' | 'companionExams' | `chapter-${ChapterCourseKind}`;
+
+interface ChapterCourseBundle {
+  courses: Course[];
+  exams: Exam[];
+}
+
+interface ChapterComprehensiveCourses {
+  sync?: ChapterCourseBundle;
+  topic?: ChapterCourseBundle;
+  extension?: ChapterCourseBundle;
+}
+
+const CHAPTER_KIND_TABS: Array<{ id: ChapterCourseKind; label: string }> = [
+  { id: 'sync', label: '同步课' },
+  { id: 'topic', label: '专题课' },
+  { id: 'extension', label: '拓展课' },
+];
+
 interface Textbook {
   id: string;
   name: string;
@@ -99,6 +133,10 @@ interface Textbook {
   chapterCount: number;
   knowledgePointCount: number;
   schoolCount: number;
+  /** 练习试卷维护方式：separated=同步课配套与精选卷分开；unified=仅练习试卷 Tab，两端共用 */
+  examPaperMode?: 'separated' | 'unified';
+  /** 章节课程结构演示模式 */
+  chapterCourseMode?: ChapterCourseMode;
   // 版本管理相关
   currentVersion?: string;           // 当前版本号（如 v1.0）
   lastPublishTime?: string;          // 最近发布时间
@@ -151,10 +189,36 @@ interface Chapter {
   parentId?: string;
   knowledgePoints?: KnowledgeRelation[];
   courses?: Course[];       // 关联的同步课程
-  exams?: Exam[];           // 关联的练习试卷
+  exams?: Exam[];           // 练习试卷 Tab / 精选卷
+  companionExams?: Exam[];  // 同步课配套试卷 / 课程中心
+  comprehensiveCourses?: ChapterComprehensiveCourses; // 章级综合课程（同步/专题/拓展）
   children?: Chapter[];
   expanded?: boolean;
 }
+
+function walkChapters(list: Chapter[], pred: (chapter: Chapter) => boolean): Chapter | null {
+  for (const chapter of list) {
+    if (pred(chapter)) return chapter;
+    if (chapter.children?.length) {
+      const found = walkChapters(chapter.children, pred);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+const PRD_EDIT_ANCHOR_IDS = new Set([
+  'textbook-tree.chapter-topic.cancel',
+  'textbook-tree.chapter-topic.save-pending',
+  'textbook-tree.chapter-topic.upload-course',
+  'textbook-tree.chapter-topic.select-video',
+  'textbook-tree.chapter-topic.select-exam',
+  'textbook-tree.chapter-extension.cancel',
+  'textbook-tree.chapter-extension.save-pending',
+  'textbook-tree.chapter-extension.upload-course',
+  'textbook-tree.chapter-extension.select-video',
+  'textbook-tree.chapter-extension.select-exam',
+]);
 
 // 知识点关联类型
 interface KnowledgeRelation {
@@ -192,7 +256,7 @@ interface Exam {
   name: string;
   questionCount: number;  // 题目数量
   totalScore: number;     // 总分
-  duration: number;       // 考试时长（分钟）
+  duration: number;       // 预计用时（分钟），选卷后可按试卷单独设置
   difficulty?: 'easy' | 'medium' | 'hard';
   // 上传相关字段
   sourceType?: 'upload' | 'library' | 'workbook';  // 来源类型
@@ -277,6 +341,8 @@ const mockTextbooks: Textbook[] = [
     currentVersion: 'v1.0',
     lastPublishTime: '2024-01-20 14:30',
     lastPublisher: '张老师',
+    examPaperMode: 'unified',
+    chapterCourseMode: 'noSync',
     publishHistory: [
       { version: 'v1.0', description: '初始版本', publishTime: '2024-01-20 14:30', publisher: '张老师', publisherAccount: '123456' },
     ],
@@ -466,6 +532,32 @@ const mockChapters: Chapter[] = [
     level: 'chapter',
     order: 1,
     expanded: true,
+    comprehensiveCourses: {
+      sync: {
+        courses: [
+          { id: 'c4', name: '函数的单调性', duration: '40分钟', teacher: '李老师', description: '讲解函数单调性的判断与证明', sourceType: 'library' as const },
+        ],
+        exams: [
+          { id: 'e4', name: '函数性质综合测试', questionCount: 18, totalScore: 100, duration: 90, difficulty: 'medium', sourceType: 'library' as const },
+        ],
+      },
+      topic: {
+        courses: [
+          { id: 'c6', name: '指数函数', duration: '45分钟', teacher: '王老师', description: '讲解指数函数的图像与性质', sourceType: 'library' as const },
+        ],
+        exams: [
+          { id: 'e6', name: '指数对数专项', questionCount: 22, totalScore: 100, duration: 60, difficulty: 'medium', sourceType: 'library' as const },
+        ],
+      },
+      extension: {
+        courses: [
+          { id: 'c8', name: '幂函数', duration: '30分钟', teacher: '赵老师', description: '讲解幂函数的图像与性质', sourceType: 'library' as const },
+        ],
+        exams: [
+          { id: 'e8', name: '期末复习卷', questionCount: 40, totalScore: 150, duration: 150, difficulty: 'hard', sourceType: 'library' as const },
+        ],
+      },
+    },
     children: [
       {
         id: 'c1-1',
@@ -475,6 +567,16 @@ const mockChapters: Chapter[] = [
         order: 1,
         parentId: 'c1',
         knowledgePoints: [],
+        courses: [
+          { id: 'c3', name: '函数的概念与性质', duration: '55分钟', teacher: '李老师', description: '讲解函数的定义、定义域、值域', sourceType: 'library' as const },
+        ],
+        companionExams: [
+          { id: 'e1', name: '集合基础练习', questionCount: 20, totalScore: 100, duration: 45, difficulty: 'easy', sourceType: 'library' as const },
+          { id: 'e2', name: '集合提高练习', questionCount: 15, totalScore: 100, duration: 60, difficulty: 'medium', sourceType: 'library' as const },
+        ],
+        exams: [
+          { id: 'e3', name: '函数概念专项训练', questionCount: 25, totalScore: 100, duration: 50, difficulty: 'easy', sourceType: 'library' as const },
+        ],
       },
       {
         id: 'c1-2',
@@ -1371,6 +1473,8 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
   const [isEditing, setIsEditing] = useState(false); // 兼容旧代码，控制左侧树编辑
   const [isEditingTree, setIsEditingTree] = useState(false); // 编辑树结构模式
   const [isEditingDetail, setIsEditingDetail] = useState(false); // 编辑详情模式
+  const [prdOpen, setPrdOpen] = useState(false);
+  const [prdWidth, setPrdWidth] = useState(360);
   const [showEditTreeConfirm, setShowEditTreeConfirm] = useState(false); // 编辑树确认弹窗
   const [initialChaptersSnapshot, setInitialChaptersSnapshot] = useState<Chapter[]>([]); // 初始章节快照
   const [detailEditSnapshot, setDetailEditSnapshot] = useState<string>(''); // 详情编辑前的快照（JSON字符串）
@@ -1401,6 +1505,108 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
     };
     return findChapter(chapters, selectedChapterId);
   }, [chapters, selectedChapterId]);
+
+  const emptyCourseBundle = (): ChapterCourseBundle => ({ courses: [], exams: [] });
+
+  const getCourseBundle = (chapter: Chapter, kind: ChapterCourseKind): ChapterCourseBundle =>
+    chapter.comprehensiveCourses?.[kind] ?? emptyCourseBundle();
+
+  const getTargetExamList = (chapter: Chapter | null, target: ExamSelectorTarget): Exam[] => {
+    if (!chapter) return [];
+    if (target === 'companionExams') return chapter.companionExams || [];
+    if (target.startsWith('chapter-')) {
+      return getCourseBundle(chapter, target.replace('chapter-', '') as ChapterCourseKind).exams;
+    }
+    return chapter.exams || [];
+  };
+
+  const setCourseBundle = (
+    chapter: Chapter,
+    kind: ChapterCourseKind,
+    bundle: ChapterCourseBundle,
+  ): Chapter => ({
+    ...chapter,
+    comprehensiveCourses: {
+      ...(chapter.comprehensiveCourses || {}),
+      [kind]: bundle,
+    },
+  });
+
+  const mapChapterById = (
+    nodes: Chapter[],
+    id: string,
+    fn: (chapter: Chapter) => Chapter,
+  ): Chapter[] =>
+    nodes.map((chapter) => {
+      if (chapter.id === id) return fn(chapter);
+      if (chapter.children) {
+        return { ...chapter, children: mapChapterById(chapter.children, id, fn) };
+      }
+      return chapter;
+    });
+
+  const parseEstimatedMinutes = (raw: string): number | null => {
+    const trimmed = raw.trim();
+    if (trimmed === '') return 0;
+    const n = parseInt(trimmed, 10);
+    if (isNaN(n) || n < 1) return null;
+    return Math.min(n, 999);
+  };
+
+  const updateExamDuration = (
+    examId: string,
+    minutes: number,
+    listField: ExamSelectorTarget,
+  ) => {
+    if (!selectedChapter) return;
+    setChapters((prev) =>
+      mapChapterById(prev, selectedChapter.id, (chapter) => {
+        const patch = (exams: Exam[]) =>
+          exams.map((exam) => (exam.id === examId ? { ...exam, duration: minutes } : exam));
+        if (listField.startsWith('chapter-')) {
+          const kind = listField.replace('chapter-', '') as ChapterCourseKind;
+          const bundle = getCourseBundle(chapter, kind);
+          return setCourseBundle(chapter, kind, { ...bundle, exams: patch(bundle.exams) });
+        }
+        if (listField === 'companionExams') {
+          return { ...chapter, companionExams: patch(chapter.companionExams || []) };
+        }
+        return { ...chapter, exams: patch(chapter.exams || []) };
+      }),
+    );
+  };
+
+  const renderEstimatedDuration = (
+    exam: Exam,
+    editable: boolean,
+    onMinutesChange: (minutes: number) => void,
+  ) => (
+    <span className="flex items-center gap-1">
+      <Clock className="w-3 h-3" />
+      {editable ? (
+        <>
+          <span>预计用时</span>
+          <input
+            type="number"
+            min={1}
+            max={999}
+            className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-center bg-white text-gray-800"
+            value={exam.duration > 0 ? exam.duration : ''}
+            placeholder="—"
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => {
+              const next = parseEstimatedMinutes(event.target.value);
+              if (next === null) return;
+              onMinutesChange(next);
+            }}
+          />
+          <span>分钟</span>
+        </>
+      ) : (
+        <span>{exam.duration > 0 ? `预计用时 ${exam.duration} 分钟` : '预计用时未设置'}</span>
+      )}
+    </span>
+  );
   
   // 章节编辑状态
   const [addingChapterParentId, setAddingChapterParentId] = useState<string | null>(null); // 正在添加的章节的父级ID，null表示顶级章
@@ -1424,9 +1630,19 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
 
   // Tab切换状态
   const [activeTab, setActiveTab] = useState<'knowledge' | 'course' | 'exam'>('knowledge');
+  const [chapterCourseHighTab, setChapterCourseHighTab] = useState<'comprehensive' | 'overview'>('comprehensive');
+  const [chapterCourseKindTab, setChapterCourseKindTab] = useState<ChapterCourseKind>('topic');
+
+  useEffect(() => {
+    setChapterCourseHighTab('comprehensive');
+    setChapterCourseKindTab((prev) =>
+      prev === 'topic' || prev === 'extension' ? prev : 'topic'
+    );
+  }, [selectedChapterId]);
 
   // 同步课程选择弹窗状态
   const [showCourseSelector, setShowCourseSelector] = useState(false);
+  const [courseSelectorTarget, setCourseSelectorTarget] = useState<CourseSelectorTarget>('leaf');
   const [tempSelectedCourses, setTempSelectedCourses] = useState<Course[]>([]);
   const [courseSearchKeyword, setCourseSearchKeyword] = useState('');
   const [previewingCourse, setPreviewingCourse] = useState<Course | null>(null); // 预览的课程
@@ -1630,12 +1846,25 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
           };
         });
 
-        const updatedCourses = [...(currentChapter.courses || []), ...newCourses];
+        const updatedCourses =
+          courseSelectorTarget === 'leaf'
+            ? [...(currentChapter.courses || []), ...newCourses]
+            : [
+                ...getCourseBundle(currentChapter, courseSelectorTarget).courses,
+                ...newCourses,
+              ];
 
         const update = (chapters: Chapter[]): Chapter[] => {
           return chapters.map(chapter => {
             if (chapter.id === currentChapter.id) {
-              return { ...chapter, courses: updatedCourses };
+              if (courseSelectorTarget === 'leaf') {
+                return { ...chapter, courses: updatedCourses };
+              }
+              const bundle = getCourseBundle(chapter, courseSelectorTarget);
+              return setCourseBundle(chapter, courseSelectorTarget, {
+                ...bundle,
+                courses: updatedCourses,
+              });
             }
             if (chapter.children) {
               return { ...chapter, children: update(chapter.children) };
@@ -1668,6 +1897,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
     knowledgePoints?: KnowledgeRelation[];
     courses?: Course[];
     exams?: Exam[];
+    companionExams?: Exam[];
   } | null>(null);
   const [pendingSiblingSubsections, setPendingSiblingSubsections] = useState<string[]>([]); // 待提示的同级已有子小节的节
 
@@ -1688,7 +1918,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
   };
 
   // 判断末级节点是否维护了数据（知识点、同步课程、练习试卷）
-  const hasLeafNodeContent = (chapterId: string): { hasContent: boolean; data: { knowledgePoints?: KnowledgeRelation[]; courses?: Course[]; exams?: Exam[] } } => {
+  const hasLeafNodeContent = (chapterId: string): { hasContent: boolean; data: { knowledgePoints?: KnowledgeRelation[]; courses?: Course[]; exams?: Exam[]; companionExams?: Exam[] } } => {
     const findChapter = (chapters: Chapter[], targetId: string): Chapter | null => {
       for (const chapter of chapters) {
         if (chapter.id === targetId) return chapter;
@@ -1705,13 +1935,15 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
     const hasKnowledgePoints = !!(chapter.knowledgePoints && chapter.knowledgePoints.length > 0);
     const hasCourses = !!(chapter.courses && chapter.courses.length > 0);
     const hasExams = !!(chapter.exams && chapter.exams.length > 0);
+    const hasCompanionExams = !!(chapter.companionExams && chapter.companionExams.length > 0);
     
     return {
-      hasContent: hasKnowledgePoints || hasCourses || hasExams,
+      hasContent: hasKnowledgePoints || hasCourses || hasExams || hasCompanionExams,
       data: {
         knowledgePoints: chapter.knowledgePoints,
         courses: chapter.courses,
-        exams: chapter.exams
+        exams: chapter.exams,
+        companionExams: chapter.companionExams,
       }
     };
   };
@@ -1719,13 +1951,19 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
   // ==================== 课程/试卷卡片统一渲染函数 ====================
 
   // 同步课程卡片 - 统一渲染，聚合态与详情态样式一致
-  const renderCourseCard = (course: Course, showRemove: boolean = true) => (
+  const renderCourseCard = (
+    course: Course,
+    showRemove: boolean = true,
+    listField: CourseSelectorTarget = 'leaf',
+    reqAnchor?: string,
+  ) => (
     <div
       key={course.id}
-      className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg group"
+      className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg group"
+      {...(reqAnchor ? { 'data-req-anchor': reqAnchor } : {})}
     >
-      <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-        <Video className="w-5 h-5 text-white" />
+      <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+        <Video className="w-4 h-4 text-blue-600" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
@@ -1748,12 +1986,6 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
           {course.videoSize && (
             <span>{course.videoSize}</span>
           )}
-          {course.teacher && (
-            <span className="flex items-center gap-1">
-              <User className="w-3 h-3" />
-              {course.teacher}
-            </span>
-          )}
         </div>
       </div>
       <div className="flex items-center gap-1">
@@ -1768,11 +2000,18 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
           <button
             onClick={() => {
               if (selectedChapter) {
-                const updatedCourses = selectedChapter.courses?.filter(c => c.id !== course.id) || [];
                 const update = (chapters: Chapter[]): Chapter[] => {
                   return chapters.map(chapter => {
                     if (chapter.id === selectedChapter.id) {
-                      return { ...chapter, courses: updatedCourses };
+                      if (listField === 'leaf') {
+                        const updatedCourses = chapter.courses?.filter(c => c.id !== course.id) || [];
+                        return { ...chapter, courses: updatedCourses };
+                      }
+                      const bundle = getCourseBundle(chapter, listField);
+                      return setCourseBundle(chapter, listField, {
+                        ...bundle,
+                        courses: bundle.courses.filter(c => c.id !== course.id),
+                      });
                     }
                     if (chapter.children) {
                       return { ...chapter, children: update(chapter.children) };
@@ -1796,13 +2035,19 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
   );
 
   // 练习试卷卡片 - 统一渲染，聚合态与详情态样式一致
-  const renderExamCard = (exam: Exam, showRemove: boolean = true) => (
+  const renderExamCard = (
+    exam: Exam,
+    showRemove: boolean = true,
+    listField: ExamSelectorTarget = 'exams',
+    reqAnchor?: string,
+  ) => (
     <div
       key={exam.id}
-      className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg group"
+      className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg group"
+      {...(reqAnchor ? { 'data-req-anchor': reqAnchor } : {})}
     >
-      <div className="w-10 h-10 bg-amber-500 rounded-lg flex items-center justify-center flex-shrink-0">
-        <ClipboardList className="w-5 h-5 text-white" />
+      <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+        <ClipboardList className="w-4 h-4 text-amber-600" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
@@ -1819,9 +2064,14 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
           <span>{exam.questionCount}题</span>
           <span>{exam.totalScore}分</span>
+          {renderEstimatedDuration(
+            exam,
+            Boolean(showRemove && isEditingDetail && selectedChapter),
+            (minutes) => updateExamDuration(exam.id, minutes, listField),
+          )}
         </div>
       </div>
       <div className="flex items-center gap-1">
@@ -1835,11 +2085,26 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
         {showRemove && isEditingDetail && selectedChapter && (
           <button
             onClick={() => {
-              const updatedExams = selectedChapter.exams?.filter(e => e.id !== exam.id) || [];
               const update = (chapters: Chapter[]): Chapter[] => {
                 return chapters.map(chapter => {
                   if (chapter.id === selectedChapter.id) {
-                    return { ...chapter, exams: updatedExams };
+                    if (listField.startsWith('chapter-')) {
+                      const kind = listField.replace('chapter-', '') as ChapterCourseKind;
+                      const bundle = getCourseBundle(chapter, kind);
+                      return setCourseBundle(chapter, kind, {
+                        ...bundle,
+                        exams: bundle.exams.filter((e) => e.id !== exam.id),
+                      });
+                    }
+                    const currentList =
+                      listField === 'companionExams'
+                        ? chapter.companionExams
+                        : chapter.exams;
+                    const updatedExams = currentList?.filter(e => e.id !== exam.id) || [];
+                    return {
+                      ...chapter,
+                      [listField === 'companionExams' ? 'companionExams' : 'exams']: updatedExams,
+                    };
                   }
                   if (chapter.children) {
                     return { ...chapter, children: update(chapter.children) };
@@ -1946,6 +2211,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
 
   // 练习试卷选择弹窗状态
   const [showExamSelector, setShowExamSelector] = useState(false);
+  const [examSelectorTarget, setExamSelectorTarget] = useState<ExamSelectorTarget>('exams');
   const [tempSelectedExams, setTempSelectedExams] = useState<Exam[]>([]);
   const [examSearchKeyword, setExamSearchKeyword] = useState('');
   const [previewExam, setPreviewExam] = useState<Exam | null>(null);
@@ -1964,6 +2230,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
 
   // 批量删除试卷弹窗状态
   const [showBatchDeleteExamDialog, setShowBatchDeleteExamDialog] = useState(false);
+  const [batchDeleteExamTarget, setBatchDeleteExamTarget] = useState<ExamSelectorTarget>('exams');
 
   // 重复试卷检测弹窗状态
   const [showDuplicateExamDialog, setShowDuplicateExamDialog] = useState(false);
@@ -2061,25 +2328,40 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
   // 试卷选择弹窗确认逻辑（供确认按钮和重复试卷弹窗共用）
   const executeExamConfirm = (skipDuplicates: boolean = true) => {
     if (selectedChapterId && tempSelectedExams.length > 0) {
+      const targetField = examSelectorTarget;
       setChapters(prevChapters => {
-        // 遍历教材树，将选中的试卷添加到当前小节
         const update = (chapters: Chapter[]): Chapter[] => {
           return chapters.map(chapter => {
-            // 末级节点（小节）
-            if (!chapter.children || chapter.children.length === 0) {
-              if (chapter.id === selectedChapterId) {
-                const existingExams = chapter.exams || [];
-                const existingExamNames = new Set(existingExams.map(e => e.name));
-                const newExams = skipDuplicates
-                  ? tempSelectedExams.filter(e => !existingExamNames.has(e.name))
-                  : tempSelectedExams;
-                if (newExams.length > 0) {
-                  return { ...chapter, exams: [...existingExams, ...newExams] };
-                }
+            if (chapter.id === selectedChapterId) {
+              const isChapterKind = targetField.startsWith('chapter-');
+              const kind = isChapterKind
+                ? (targetField.replace('chapter-', '') as ChapterCourseKind)
+                : null;
+              const existingExams = kind
+                ? getCourseBundle(chapter, kind).exams
+                : targetField === 'companionExams'
+                  ? chapter.companionExams || []
+                  : chapter.exams || [];
+              const existingExamNames = new Set(existingExams.map(e => e.name));
+              const newExams = skipDuplicates
+                ? tempSelectedExams.filter(e => !existingExamNames.has(e.name))
+                : tempSelectedExams;
+              if (newExams.length === 0) return chapter;
+              if (kind) {
+                const bundle = getCourseBundle(chapter, kind);
+                return setCourseBundle(chapter, kind, {
+                  ...bundle,
+                  exams: [...bundle.exams, ...newExams],
+                });
               }
-              return chapter;
+              return {
+                ...chapter,
+                [targetField === 'companionExams' ? 'companionExams' : 'exams']: [
+                  ...existingExams,
+                  ...newExams,
+                ],
+              };
             }
-            // 非末级节点（章），递归处理子节点
             if (chapter.children) {
               return { ...chapter, children: update(chapter.children) };
             }
@@ -2096,6 +2378,589 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
     setShowDuplicateExamDialog(false);
     setDuplicateExamNames([]);
     setDuplicateExamMode('skip');
+  };
+
+  const openExamSelector = (target: ExamSelectorTarget) => {
+    setExamSelectorTarget(target);
+    setTempSelectedExams([]);
+    setExamSearchKeyword('');
+    setShowExamSelector(true);
+  };
+
+  const renderResourcePanel = (
+    variant: 'video' | 'exam',
+    title: React.ReactNode,
+    actions: React.ReactNode,
+    children: React.ReactNode,
+  ) => {
+    const isVideo = variant === 'video';
+    const Icon = isVideo ? Video : ClipboardList;
+    return (
+      <section
+        className={`rounded-xl overflow-hidden border ${
+          isVideo ? 'border-blue-600' : 'border-amber-600'
+        }`}
+      >
+        <div
+          className={`flex items-center justify-between gap-3 px-4 py-3 ${
+            isVideo ? 'bg-blue-600' : 'bg-amber-600'
+          }`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Icon className="w-4 h-4 text-white" />
+            </div>
+            <div className="min-w-0">{title}</div>
+          </div>
+          {actions ? <div className="flex items-center gap-2 flex-shrink-0">{actions}</div> : null}
+        </div>
+        <div className="p-3 bg-gray-50">{children}</div>
+      </section>
+    );
+  };
+
+  const renderLeafExamModule = (
+    title: string,
+    list: Exam[] | undefined,
+    listField: ExamSelectorTarget,
+  ) => {
+    const examList = list || [];
+    const isTopicExam = listField === 'chapter-topic';
+    const isExtensionExam = listField === 'chapter-extension';
+    const examRegionAnchor = isTopicExam
+      ? 'textbook-tree.chapter-topic.exam-region'
+      : isExtensionExam
+        ? 'textbook-tree.chapter-extension.exam-region'
+        : undefined;
+    const selectExamAnchor = isTopicExam
+      ? 'textbook-tree.chapter-topic.select-exam'
+      : isExtensionExam
+        ? 'textbook-tree.chapter-extension.select-exam'
+        : undefined;
+    const examCardAnchor = isTopicExam
+      ? 'textbook-tree.chapter-topic.exam-card'
+      : isExtensionExam
+        ? 'textbook-tree.chapter-extension.exam-card'
+        : undefined;
+    return renderResourcePanel(
+      'exam',
+      <h4
+        className="text-sm font-semibold text-white"
+        {...(examRegionAnchor ? { 'data-req-anchor': examRegionAnchor } : {})}
+      >
+        {title}
+        {examList.length > 0 && (
+          <span className="ml-2 text-xs font-normal text-white/80">({examList.length}套)</span>
+        )}
+      </h4>,
+      isEditingDetail ? (
+        <>
+          <button
+            onClick={() => openExamSelector(listField)}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm border border-emerald-600 text-emerald-600 bg-white rounded-lg hover:bg-emerald-50 transition-colors"
+            {...(selectExamAnchor ? { 'data-req-anchor': selectExamAnchor } : {})}
+          >
+            <BookOpen className="w-4 h-4" />
+            从资源库选择
+          </button>
+        </>
+      ) : null,
+      examList.length > 0 ? (
+        <div className="space-y-2">
+          {examList.map((exam, index) =>
+            renderExamCard(
+              exam,
+              true,
+              listField,
+              examCardAnchor && index === 0 ? examCardAnchor : undefined,
+            ),
+          )}
+        </div>
+      ) : (
+        <div className="text-center py-8 rounded-lg border border-dashed border-gray-200 bg-white">
+          <ClipboardList className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-500">暂未关联练习试卷</p>
+          {isEditingDetail && (
+            <p className="text-xs text-gray-400 mt-1">点击上方按钮从资源库选择练习试卷</p>
+          )}
+        </div>
+      ),
+    );
+  };
+
+  const openCourseSelector = (target: CourseSelectorTarget) => {
+    setCourseSelectorTarget(target);
+    setTempSelectedCourses([]);
+    setCourseSearchKeyword('');
+    setShowCourseSelector(true);
+  };
+
+  const openUploadCourse = (target: CourseSelectorTarget) => {
+    setCourseSelectorTarget(target);
+    setUploadFiles([]);
+    setIsUploadingCourse(false);
+    setShowUploadCourseDialog(true);
+  };
+
+  const prdCtxRef = useRef({
+    selectedTextbook,
+    selectedChapter,
+    chapters,
+    isEditingDetail,
+  });
+  prdCtxRef.current = { selectedTextbook, selectedChapter, chapters, isEditingDetail };
+
+  useEffect(() => {
+    syncPrdPanelOffset(prdOpen, prdWidth);
+  }, [prdOpen, prdWidth]);
+
+  useEffect(() => () => syncPrdPanelOffset(false, 0), []);
+
+  useEffect(() => {
+    let seq = 0;
+    const onActivate = (event: Event) => {
+      const requirement = (event as CustomEvent<ReqPrdActivateDetail>).detail?.requirement;
+      if (!requirement) return;
+      const token = ++seq;
+      void (async () => {
+        const ctx = prdCtxRef.current;
+        if (!ctx.selectedTextbook) return;
+
+        const steps = requirement.activate ?? [];
+        const dialogs = steps.map((step) => step.dialog).filter(Boolean) as string[];
+        const tabs = steps.map((step) => step.tab).filter(Boolean) as string[];
+        const anchors = steps.map((step) => step.anchorId).filter(Boolean) as string[];
+        const lastAnchor = anchors[anchors.length - 1] ?? requirement.anchorId;
+        const needsLeaf = dialogs.includes('course-selector-leaf');
+        const needsChapter =
+          tabs.includes('comprehensive') ||
+          tabs.includes('topic') ||
+          tabs.includes('extension') ||
+          dialogs.some((dialog) => dialog.includes('topic') || dialog.includes('extension')) ||
+          anchors.some((id) => id.includes('chapter-topic') || id.includes('chapter-extension'));
+        const needsEdit =
+          anchors.some((id) => PRD_EDIT_ANCHOR_IDS.has(id)) ||
+          dialogs.some((dialog) => dialog.startsWith('upload-course'));
+
+        if (needsLeaf) {
+          const leaf =
+            ctx.selectedChapter && !ctx.selectedChapter.children?.length
+              ? ctx.selectedChapter
+              : walkChapters(ctx.chapters, (chapter) => !chapter.children?.length);
+          if (leaf && leaf.id !== ctx.selectedChapter?.id) setSelectedChapterId(leaf.id);
+        } else if (needsChapter) {
+          const chapter =
+            ctx.selectedChapter?.level === 'chapter'
+              ? ctx.selectedChapter
+              : walkChapters(ctx.chapters, (item) => item.level === 'chapter');
+          if (chapter && chapter.id !== ctx.selectedChapter?.id) setSelectedChapterId(chapter.id);
+        }
+
+        if (tabs.includes('course')) setActiveTab('course');
+        if (tabs.includes('comprehensive')) setChapterCourseHighTab('comprehensive');
+        if (tabs.includes('topic')) setChapterCourseKindTab('topic');
+        if (tabs.includes('extension')) setChapterCourseKindTab('extension');
+
+        if (needsEdit && !ctx.isEditingDetail) {
+          const snapshotTarget =
+            ctx.selectedChapter?.level === 'chapter' || needsChapter
+              ? walkChapters(ctx.chapters, (item) => item.level === 'chapter') ?? ctx.selectedChapter
+              : ctx.selectedChapter;
+          if (snapshotTarget) setDetailEditSnapshot(JSON.stringify(snapshotTarget));
+          setIsEditingDetail(true);
+        }
+
+        const closeOverlays = () => {
+          setShowCourseSelector(false);
+          setShowUploadCourseDialog(false);
+          setShowExamSelector(false);
+          setPreviewingCourse(null);
+          setPreviewExam(null);
+        };
+
+        const chapterNow =
+          ctx.selectedChapter?.level === 'chapter'
+            ? ctx.selectedChapter
+            : walkChapters(ctx.chapters, (item) => item.level === 'chapter');
+        const topicBundle = chapterNow?.comprehensiveCourses?.topic;
+        const extensionBundle = chapterNow?.comprehensiveCourses?.extension;
+
+        closeOverlays();
+        for (const dialog of dialogs) {
+          if (dialog === 'course-selector-topic') {
+            setCourseSelectorTarget('topic');
+            setTempSelectedCourses([]);
+            setCourseSearchKeyword('');
+            setShowCourseSelector(true);
+          } else if (dialog === 'course-selector-extension') {
+            setCourseSelectorTarget('extension');
+            setTempSelectedCourses([]);
+            setCourseSearchKeyword('');
+            setShowCourseSelector(true);
+          } else if (dialog === 'course-selector-leaf') {
+            setCourseSelectorTarget('leaf');
+            setTempSelectedCourses([]);
+            setCourseSearchKeyword('');
+            setShowCourseSelector(true);
+          } else if (dialog === 'upload-course-topic') {
+            setCourseSelectorTarget('topic');
+            setUploadFiles([]);
+            setIsUploadingCourse(false);
+            setShowUploadCourseDialog(true);
+          } else if (dialog === 'upload-course-extension') {
+            setCourseSelectorTarget('extension');
+            setUploadFiles([]);
+            setIsUploadingCourse(false);
+            setShowUploadCourseDialog(true);
+          } else if (dialog === 'exam-selector-topic') {
+            setExamSelectorTarget('chapter-topic');
+            setTempSelectedExams([]);
+            setExamSearchKeyword('');
+            setShowExamSelector(true);
+          } else if (dialog === 'exam-selector-extension') {
+            setExamSelectorTarget('chapter-extension');
+            setTempSelectedExams([]);
+            setExamSearchKeyword('');
+            setShowExamSelector(true);
+          } else if (dialog === 'topic-resource-preview') {
+            const course = topicBundle?.courses[0];
+            if (course) setPreviewingCourse(course);
+          } else if (dialog === 'extension-resource-preview') {
+            const course = extensionBundle?.courses[0];
+            if (course) setPreviewingCourse(course);
+          }
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 160));
+        if (token !== seq) return;
+        window.dispatchEvent(new Event('req-markers-rescan'));
+        if (lastAnchor) {
+          const el = await waitForReqAnchor(lastAnchor);
+          if (token !== seq) return;
+          if (el) highlightReqAnchor(lastAnchor);
+        }
+      })();
+    };
+    window.addEventListener(REQ_PRD_ACTIVATE, onActivate);
+    return () => window.removeEventListener(REQ_PRD_ACTIVATE, onActivate);
+  }, []);
+
+  const renderLeafVideoModule = (detailTooltip: typeof prd200.textbookSyncCourseDetail) => {
+    if (!selectedChapter) return null;
+    const courses = selectedChapter.courses || [];
+    return renderResourcePanel(
+      'video',
+      <>
+        <h4 className="text-sm font-semibold text-white flex items-center">
+          关联同步课程
+          {courses.length > 0 && (
+            <span className="ml-2 text-xs font-normal text-white/80">({courses.length}个)</span>
+          )}
+          <PrdTooltip data={isEditingDetail ? prd205.editSyncCourseLeafData : detailTooltip} className="ml-1" />
+        </h4>
+      </>,
+      isEditingDetail ? (
+        <>
+          <PrdTooltip data={prd205.editSyncCourseActions} />
+          <button
+            onClick={() => openUploadCourse('leaf')}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-white text-blue-700 rounded-lg hover:bg-blue-50 transition-colors"
+          >
+            <Upload className="w-4 h-4" />
+            上传课程
+          </button>
+          <button
+            onClick={() => openCourseSelector('leaf')}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm border border-emerald-600 text-emerald-600 bg-white rounded-lg hover:bg-emerald-50 transition-colors"
+          >
+            <BookOpen className="w-4 h-4" />
+            从资源库选择
+          </button>
+        </>
+      ) : null,
+      courses.length > 0 ? (
+        <div className="space-y-2">
+          {courses.map((course) => renderCourseCard(course, true))}
+        </div>
+      ) : (
+        <div className="text-center py-8 rounded-lg border border-dashed border-gray-200 bg-white relative">
+          <PrdTooltip data={isEditingDetail ? prd205.editSyncCourseLeafEmpty : prd200.textbookSyncCourseEmpty} className="absolute top-2 right-2" />
+          <Video className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-500">暂未关联同步课程</p>
+          {isEditingDetail && (
+            <p className="text-xs text-gray-400 mt-1">点击上方按钮添加同步课程</p>
+          )}
+        </div>
+      ),
+    );
+  };
+
+  const renderChapterKindEditor = (kind: ChapterCourseKind) => {
+    if (!selectedChapter) return null;
+    const bundle = getCourseBundle(selectedChapter, kind);
+    const kindLabel = CHAPTER_KIND_TABS.find((item) => item.id === kind)?.label || '';
+    const isTopic = kind === 'topic';
+    const isExtension = kind === 'extension';
+    const videoRegionAnchor = isTopic
+      ? 'textbook-tree.chapter-topic.video-region'
+      : isExtension
+        ? 'textbook-tree.chapter-extension.video-region'
+        : undefined;
+    const uploadCourseAnchor = isTopic
+      ? 'textbook-tree.chapter-topic.upload-course'
+      : isExtension
+        ? 'textbook-tree.chapter-extension.upload-course'
+        : undefined;
+    const selectVideoAnchor = isTopic
+      ? 'textbook-tree.chapter-topic.select-video'
+      : isExtension
+        ? 'textbook-tree.chapter-extension.select-video'
+        : undefined;
+    const videoCardAnchor = isTopic
+      ? 'textbook-tree.chapter-topic.video-card'
+      : isExtension
+        ? 'textbook-tree.chapter-extension.video-card'
+        : undefined;
+    return (
+      <div className="space-y-5">
+        {renderResourcePanel(
+          'video',
+          <>
+            <h4
+              className="text-sm font-semibold text-white"
+              {...(videoRegionAnchor ? { 'data-req-anchor': videoRegionAnchor } : {})}
+            >
+              {kindLabel}视频
+              {bundle.courses.length > 0 && (
+                <span className="ml-2 text-xs font-normal text-white/80">({bundle.courses.length}个)</span>
+              )}
+            </h4>
+          </>,
+          isEditingDetail ? (
+            <>
+              <button
+                onClick={() => openUploadCourse(kind)}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-white text-blue-700 rounded-lg hover:bg-blue-50 transition-colors"
+                {...(uploadCourseAnchor ? { 'data-req-anchor': uploadCourseAnchor } : {})}
+              >
+                <Upload className="w-4 h-4" />
+                上传课程
+              </button>
+              <button
+                onClick={() => openCourseSelector(kind)}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm border border-emerald-600 text-emerald-600 bg-white rounded-lg hover:bg-emerald-50 transition-colors"
+                {...(selectVideoAnchor ? { 'data-req-anchor': selectVideoAnchor } : {})}
+              >
+                <BookOpen className="w-4 h-4" />
+                从资源库选择
+              </button>
+            </>
+          ) : null,
+          bundle.courses.length > 0 ? (
+            <div className="space-y-2">
+              {bundle.courses.map((course, index) =>
+                renderCourseCard(
+                  course,
+                  true,
+                  kind,
+                  videoCardAnchor && index === 0 ? videoCardAnchor : undefined,
+                ),
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-8 rounded-lg border border-dashed border-gray-200 bg-white">
+              <Video className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">暂未关联{kindLabel}视频</p>
+              {isEditingDetail && (
+                <p className="text-xs text-gray-400 mt-1">点击上方按钮添加课程</p>
+              )}
+            </div>
+          ),
+        )}
+        {kind !== 'sync' &&
+          renderLeafExamModule(
+            `${kindLabel}练习试卷`,
+            bundle.exams,
+            `chapter-${kind}`,
+          )}
+      </div>
+    );
+  };
+
+  const renderChapterKindSubTabs = (kinds: ChapterCourseKind[]) => (
+    <div>
+      <div className="flex gap-1 mb-4 border-b border-gray-200">
+        {kinds.map((kind) => {
+          const label = CHAPTER_KIND_TABS.find((item) => item.id === kind)?.label;
+          return (
+            <button
+              key={kind}
+              type="button"
+              onClick={() => setChapterCourseKindTab(kind)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                chapterCourseKindTab === kind
+                  ? 'text-emerald-600 border-emerald-600'
+                  : 'text-gray-500 border-transparent hover:text-gray-700'
+              }`}
+              {...(kind === 'topic'
+                ? { 'data-req-anchor': 'textbook-tree.chapter-topic.topic-tab' }
+                : kind === 'extension'
+                  ? { 'data-req-anchor': 'textbook-tree.chapter-extension.extension-tab' }
+                  : {})}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {kinds.includes(chapterCourseKindTab)
+        ? renderChapterKindEditor(chapterCourseKindTab)
+        : renderChapterKindEditor(kinds[0])}
+    </div>
+  );
+
+  const renderChapterSyncOverview = () => {
+    if (!selectedChapter) return null;
+    return (
+      <div>
+        <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
+          同步课总览
+          <span className="ml-2 text-xs text-gray-400 font-normal">
+            （聚合展示该章节下所有节关联的课程）
+          </span>
+          <PrdTooltip data={isEditingDetail ? prd205.editSyncCourseAggregate : prd200.textbookSyncCourseAggregate} className="ml-1" />
+        </h4>
+
+        {selectedChapter.children && selectedChapter.children.length > 0 ? (
+          <div className="space-y-0">
+            {selectedChapter.children.map((section, sectionIndex) => {
+              const hasCourses = section.courses && section.courses.length > 0;
+              const hasSubsections = section.children && section.children.length > 0;
+              const isLast = sectionIndex === (selectedChapter.children?.length || 0) - 1;
+
+              return (
+                <div key={section.id} className="relative">
+                  <div className="flex">
+                    <div className="w-6 flex-shrink-0 flex flex-col items-center">
+                      <div className={`w-px ${sectionIndex === 0 ? 'h-4' : 'h-0'} bg-blue-300`}></div>
+                      <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-sm z-10"></div>
+                      {!isLast && <div className="w-px flex-1 bg-blue-300"></div>}
+                    </div>
+
+                    <div className="flex-1 pb-4">
+                      <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-blue-100 rounded-lg border border-blue-300">
+                        <ListTree className="w-4 h-4 text-blue-600" />
+                        <span className="text-base font-bold text-blue-800">{section.name}</span>
+                        {hasCourses && (
+                          <span className="text-xs text-blue-600">
+                            ({section.courses?.length}个课程)
+                          </span>
+                        )}
+                        {hasSubsections && (
+                          <span className="text-xs text-gray-500">
+                            （含{section.children?.length}个小节）
+                          </span>
+                        )}
+                      </div>
+
+                      {hasSubsections ? (
+                        <div className="ml-2 space-y-2">
+                          {section.children?.map((subsection) => {
+                            const subsectionHasCourses = subsection.courses && subsection.courses.length > 0;
+
+                            return (
+                              <div key={subsection.id} className="relative">
+                                <div className="flex">
+                                  <div className="w-4 flex-shrink-0 flex flex-col items-center">
+                                    <div className="w-px h-4 bg-blue-200"></div>
+                                    <div className="w-2.5 h-2.5 rounded-full bg-blue-400 border-2 border-white shadow-sm z-10"></div>
+                                  </div>
+
+                                  <div className="flex-1 pb-2">
+                                    <div className="flex items-center gap-2 mb-1 px-2 py-1 bg-gray-50 rounded border border-gray-200">
+                                      <Video className="w-3.5 h-3.5 text-gray-500" />
+                                      <span className="text-sm font-medium text-gray-700">{subsection.name}</span>
+                                      {subsectionHasCourses ? (
+                                        <span className="text-xs text-blue-600">
+                                          {subsection.courses?.length}个课程
+                                        </span>
+                                      ) : (
+                                        <span className="text-xs text-gray-400">暂无内容</span>
+                                      )}
+                                    </div>
+
+                                    {subsectionHasCourses && (
+                                      <div className="ml-4 space-y-2">
+                                        {subsection.courses?.map((course) => renderCourseCard(course, false))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : hasCourses ? (
+                        <div className="ml-2 space-y-2">
+                          {section.courses?.map((course) => renderCourseCard(course, false))}
+                        </div>
+                      ) : (
+                        <div className="ml-2 px-3 py-2 bg-gray-50 border border-dashed border-gray-200 rounded-lg text-sm text-gray-400">
+                          暂无课程
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+            <Video className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+            <p className="text-sm text-gray-500">该章节下暂无节</p>
+            {isEditingTree && (
+              <p className="text-xs text-gray-400 mt-1">请先在左侧添加节</p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderChapterCoursePanel = () => {
+    return (
+      <div>
+        <div className="flex gap-1 mb-4 border-b border-gray-200">
+          <button
+            type="button"
+            onClick={() => setChapterCourseHighTab('comprehensive')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              chapterCourseHighTab === 'comprehensive'
+                ? 'text-emerald-600 border-emerald-600'
+                : 'text-gray-500 border-transparent hover:text-gray-700'
+            }`}
+            data-req-anchor="textbook-tree.chapter-topic.comprehensive-tab"
+          >
+            综合课维护
+          </button>
+          <button
+            type="button"
+            onClick={() => setChapterCourseHighTab('overview')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              chapterCourseHighTab === 'overview'
+                ? 'text-emerald-600 border-emerald-600'
+                : 'text-gray-500 border-transparent hover:text-gray-700'
+            }`}
+          >
+            同步课总览
+          </button>
+        </div>
+        {chapterCourseHighTab === 'overview'
+          ? renderChapterSyncOverview()
+          : renderChapterKindSubTabs(['topic', 'extension'])}
+      </div>
+    );
   };
 
   // 教材级习题册导入（不限于当前小节，匹配所有章节）
@@ -3757,6 +4622,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
           </div>
           
           <div className="flex items-center gap-2">
+            <PrdToggleButton open={prdOpen} onClick={() => setPrdOpen((open) => !open)} />
             <button
               onClick={() => setShowAggregateHistory(true)}
               className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
@@ -4788,6 +5654,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
               </button>
             </div>
             <div className="flex items-center gap-2">
+              <PrdToggleButton open={prdOpen} onClick={() => setPrdOpen((open) => !open)} />
               {/* 删除按钮 - 教研主管权限 */}
               {!isTeacher && (
                 <button
@@ -4990,6 +5857,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                             setDetailEditSnapshot('');
                           }}
                           className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                          data-req-anchor="textbook-tree.chapter-topic.cancel"
                         >
                           取消
                         </button>
@@ -5009,6 +5877,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                             setDetailEditSnapshot('');
                           }}
                           className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm"
+                          data-req-anchor="textbook-tree.chapter-topic.save-pending"
                         >
                           <Save className="w-4 h-4" />
                           保存编辑
@@ -5081,9 +5950,10 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                           ? 'text-emerald-600 border-emerald-600'
                           : 'text-gray-500 border-transparent hover:text-gray-700'
                       }`}
+                      data-req-anchor="textbook-tree.chapter-topic.course-tab"
                     >
                       <Video className="w-4 h-4 inline-block mr-1" />
-                      同步课程
+                      课程
                     </button>
                     <PrdTooltip data={prd200.textbookSyncCourseTab} />
                     <button
@@ -5425,122 +6295,8 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                   </div>
                 )}
 
-                {/* 章级别 - 同步课程聚合展示 */}
-                {selectedChapter.level === 'chapter' && activeTab === 'course' && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                      同步课程总览
-                      <span className="ml-2 text-xs text-gray-400 font-normal">
-                        （聚合展示该章节下所有节关联的课程）
-                      </span>
-                      <PrdTooltip data={isEditingDetail ? prd205.editSyncCourseAggregate : prd200.textbookSyncCourseAggregate} className="ml-1" />
-                    </h4>
-                    
-                    {selectedChapter.children && selectedChapter.children.length > 0 ? (
-                      <div className="space-y-0">
-                        {selectedChapter.children.map((section, sectionIndex) => {
-                          const hasCourses = section.courses && section.courses.length > 0;
-                          const hasSubsections = section.children && section.children.length > 0;
-                          const isLast = sectionIndex === (selectedChapter.children?.length || 0) - 1;
-                          
-                          return (
-                            <div key={section.id} className="relative">
-                              {/* 连接线容器 */}
-                              <div className="flex">
-                                {/* 左侧连接线区域 */}
-                                <div className="w-6 flex-shrink-0 flex flex-col items-center">
-                                  <div className={`w-px ${sectionIndex === 0 ? 'h-4' : 'h-0'} bg-blue-300`}></div>
-                                  <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-sm z-10"></div>
-                                  {!isLast && <div className="w-px flex-1 bg-blue-300"></div>}
-                                </div>
-                                
-                                {/* 右侧内容区域 */}
-                                <div className="flex-1 pb-4">
-                                  {/* 节标题 */}
-                                  <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-blue-100 rounded-lg border border-blue-300">
-                                    <ListTree className="w-4 h-4 text-blue-600" />
-                                    <span className="text-base font-bold text-blue-800">{section.name}</span>
-                                    {hasCourses && (
-                                      <span className="text-xs text-blue-600">
-                                        ({section.courses?.length}个课程)
-                                      </span>
-                                    )}
-                                    {hasSubsections && (
-                                      <span className="text-xs text-gray-500">
-                                        （含{hasSubsections}个小节）
-                                      </span>
-                                    )}
-                                  </div>
-                                  
-                                  {/* 如果有三级小节，嵌套展示三级小节及其内容 */}
-                                  {hasSubsections ? (
-                                    <div className="ml-2 space-y-2">
-                                      {section.children?.map((subsection) => {
-                                        const subsectionHasCourses = subsection.courses && subsection.courses.length > 0;
-                                        
-                                        return (
-                                          <div key={subsection.id} className="relative">
-                                            <div className="flex">
-                                              {/* 三级小节连接线 */}
-                                              <div className="w-4 flex-shrink-0 flex flex-col items-center">
-                                                <div className="w-px h-4 bg-blue-200"></div>
-                                                <div className="w-2.5 h-2.5 rounded-full bg-blue-400 border-2 border-white shadow-sm z-10"></div>
-                                              </div>
-                                              
-                                              {/* 三级小节内容 */}
-                                              <div className="flex-1 pb-2">
-                                                <div className="flex items-center gap-2 mb-1 px-2 py-1 bg-gray-50 rounded border border-gray-200">
-                                                  <Video className="w-3.5 h-3.5 text-gray-500" />
-                                                  <span className="text-sm font-medium text-gray-700">{subsection.name}</span>
-                                                  {subsectionHasCourses && (
-                                                    <span className="text-xs text-blue-600">
-                                                      {subsection.courses?.length}个课程
-                                                    </span>
-                                                  )}
-                                                  {!subsectionHasCourses && (
-                                                    <span className="text-xs text-gray-400">暂无内容</span>
-                                                  )}
-                                                </div>
-                                                
-                                                {/* 三级小节下的课程列表 */}
-                                                {subsectionHasCourses && (
-                                                  <div className="ml-4 space-y-2">
-                                                    {subsection.courses?.map((course) => renderCourseCard(course, false))}
-                                                  </div>
-                                                )}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : hasCourses ? (
-                                    /* 如果没有三级小节，展示二级小节自己的课程 */
-                                    <div className="ml-2 space-y-2">
-                                      {section.courses?.map((course) => renderCourseCard(course, false))}
-                                    </div>
-                                  ) : (
-                                    <div className="ml-2 px-3 py-2 bg-gray-50 border border-dashed border-gray-200 rounded-lg text-sm text-gray-400">
-                                      暂无课程
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-                        <Video className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm text-gray-500">该章节下暂无节</p>
-                        {isEditingTree && (
-                          <p className="text-xs text-gray-400 mt-1">请先在左侧添加节</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* 章级别 - 同步课程 */}
+                {selectedChapter.level === 'chapter' && activeTab === 'course' && renderChapterCoursePanel()}
 
                 {/* 章级别 - 练习试卷聚合展示 */}
                 {selectedChapter.level === 'chapter' && activeTab === 'exam' && (
@@ -6042,68 +6798,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                   }
                   
                   // 如果没有子节点，显示原有的直接维护态
-                  return (
-                    <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-semibold text-gray-700">
-                          关联同步课程
-                          {isEditingDetail && (
-                            <span className="ml-2 text-xs text-muted-foreground font-normal">
-                              删除视频，仅代表在当前页面解除关联关系，不影响原视频在资源库中的存在。
-                            </span>
-                          )}
-                          <PrdTooltip data={isEditingDetail ? prd205.editSyncCourseLeafData : prd200.textbookSyncCourseDetail} className="ml-1" />
-                          {(selectedChapter.courses?.length || 0) > 0 && (
-                            <span className="ml-2 text-xs text-gray-400 font-normal">
-                              ({selectedChapter.courses?.length || 0}个)
-                            </span>
-                          )}
-                        </h4>
-                        {isEditingDetail && (
-                          <div className="flex items-center gap-2">
-                            <PrdTooltip data={prd205.editSyncCourseActions} className="mr-1" />
-                            <button
-                              onClick={() => {
-                                setUploadFiles([]);
-                                setIsUploadingCourse(false);
-                                setShowUploadCourseDialog(true);
-                              }}
-                              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                            >
-                              <Upload className="w-4 h-4" />
-                              上传课程
-                            </button>
-                            <button
-                              onClick={() => {
-                                setTempSelectedCourses([]);
-                                setCourseSearchKeyword('');
-                                setShowCourseSelector(true);
-                              }}
-                              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-emerald-600 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"
-                            >
-                              <BookOpen className="w-4 h-4" />
-                              从资源库选择
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      
-                      {(selectedChapter.courses?.length || 0) > 0 ? (
-                        <div className="space-y-2">
-                          {selectedChapter.courses?.map((course) => renderCourseCard(course, true))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300 relative">
-                          <PrdTooltip data={isEditingDetail ? prd205.editSyncCourseLeafEmpty : prd200.textbookSyncCourseEmpty} className="absolute top-2 right-2" />
-                          <Video className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                          <p className="text-sm text-gray-500">暂未关联同步课程</p>
-                          {isEditingDetail && (
-                            <p className="text-xs text-gray-400 mt-1">点击上方按钮添加同步课程</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
+                  return renderLeafVideoModule(prd200.textbookSyncCourseDetail);
                 })()}
 
                 {/* 练习试卷 Tab 内容 - 节级别判断是否有子节点 */}
@@ -6172,6 +6867,9 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                       <div className="flex items-center justify-between mb-3">
                         <h4 className="text-sm font-semibold text-gray-700">
                           关联练习试卷
+                          <span className="ml-2 text-xs text-gray-400 font-normal">
+                            前端同时用于课程中心与精选卷
+                          </span>
                           <PrdTooltip data={prd200.textbookPracticePaperDetail} className="ml-1" />
                           <PrdTooltip data={prd209.examSourceTag} className="ml-0.5" />
                           {(selectedChapter.exams?.length || 0) > 0 && (
@@ -6185,6 +6883,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                             {(selectedChapter.exams?.length || 0) > 0 && (
                               <button
                                 onClick={() => {
+                                  setBatchDeleteExamTarget('exams');
                                   setShowBatchDeleteExamDialog(true);
                                 }}
                                 className="flex items-center gap-1 px-3 py-1.5 text-sm border border-red-300 text-red-500 rounded-lg hover:bg-red-50 transition-colors"
@@ -6194,11 +6893,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                               </button>
                             )}
                             <button
-                              onClick={() => {
-                                setTempSelectedExams([]);
-                                setExamSearchKeyword('');
-                                setShowExamSelector(true);
-                              }}
+                              onClick={() => openExamSelector('exams')}
                               className="flex items-center gap-1 px-3 py-1.5 text-sm border border-emerald-600 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"
                             >
                               <BookOpen className="w-4 h-4" />
@@ -6378,66 +7073,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
 
                 {/* 子节级别 - 同步课程直接维护 */}
                 {selectedChapter.level === 'subsection' && activeTab === 'course' && (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm font-semibold text-gray-700">
-                        关联同步课程
-                        {isEditingDetail && (
-                          <span className="ml-2 text-xs text-muted-foreground font-normal">
-                            删除视频，仅代表在当前页面解除关联关系，不影响原视频在资源库中的存在。
-                          </span>
-                        )}
-                        <PrdTooltip data={isEditingDetail ? prd205.editSyncCourseLeafData : prd200.textbookSyncCourseSectionDetail} className="ml-1" />
-                        {(selectedChapter.courses?.length || 0) > 0 && (
-                          <span className="ml-2 text-xs text-gray-400 font-normal">
-                            ({selectedChapter.courses?.length || 0}个)
-                          </span>
-                        )}
-                      </h4>
-                      {isEditingDetail && (
-                        <div className="flex items-center gap-2">
-                          <PrdTooltip data={prd205.editSyncCourseActions} className="mr-1" />
-                          <button
-                            onClick={() => {
-                              setUploadFiles([]);
-                              setIsUploadingCourse(false);
-                              setShowUploadCourseDialog(true);
-                            }}
-                            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                          >
-                            <Upload className="w-4 h-4" />
-                            上传课程
-                          </button>
-                          <button
-                            onClick={() => {
-                              setTempSelectedCourses([]);
-                              setCourseSearchKeyword('');
-                              setShowCourseSelector(true);
-                            }}
-                            className="flex items-center gap-1 px-3 py-1.5 text-sm border border-emerald-600 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"
-                          >
-                            <BookOpen className="w-4 h-4" />
-                            从资源库选择
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {(selectedChapter.courses?.length || 0) > 0 ? (
-                      <div className="space-y-2">
-                        {selectedChapter.courses?.map((course) => renderCourseCard(course, true))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300 relative">
-                        <PrdTooltip data={isEditingDetail ? prd205.editSyncCourseLeafEmpty : prd200.textbookSyncCourseEmpty} className="absolute top-2 right-2" />
-                        <Video className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm text-gray-500">暂未关联同步课程</p>
-                        {isEditingDetail && (
-                          <p className="text-xs text-gray-400 mt-1">点击上方按钮添加同步课程</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  renderLeafVideoModule(prd200.textbookSyncCourseSectionDetail)
                 )}
 
                 {/* 子节级别 - 练习试卷直接维护 */}
@@ -6446,6 +7082,9 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-sm font-semibold text-gray-700">
                         关联练习试卷
+                        <span className="ml-2 text-xs text-gray-400 font-normal">
+                          前端同时用于课程中心与精选卷
+                        </span>
                         <PrdTooltip data={prd200.textbookPracticePaperSectionDetail} className="ml-1" />
                         {(selectedChapter.exams?.length || 0) > 0 && (
                           <span className="ml-2 text-xs text-gray-400 font-normal">
@@ -6458,6 +7097,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                           {(selectedChapter.exams?.length || 0) > 0 && (
                             <button
                               onClick={() => {
+                                setBatchDeleteExamTarget('exams');
                                 setShowBatchDeleteExamDialog(true);
                               }}
                               className="flex items-center gap-1 px-3 py-1.5 text-sm border border-red-300 text-red-500 rounded-lg hover:bg-red-50 transition-colors"
@@ -6467,11 +7107,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                             </button>
                           )}
                           <button
-                            onClick={() => {
-                              setTempSelectedExams([]);
-                              setExamSearchKeyword('');
-                              setShowExamSelector(true);
-                            }}
+                            onClick={() => openExamSelector('exams')}
                             className="flex items-center gap-1 px-3 py-1.5 text-sm border border-emerald-600 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"
                           >
                             <BookOpen className="w-4 h-4" />
@@ -6593,7 +7229,7 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
                       }`}
                     >
                       <Video className="w-4 h-4 inline-block mr-1" />
-                      同步课程
+                      课程
                     </button>
                     <button
                       onClick={() => setActiveTab('exam')}
@@ -7063,7 +7699,15 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
   };
 
   return (
-    <div>
+    <div
+      className={`prd-reader-shell${prdOpen ? ' is-prd-open' : ''}`}
+      style={{
+        gridTemplateColumns: prdOpen ? `minmax(0, 1fr) ${prdWidth}px` : 'minmax(0, 1fr)',
+        ['--prd-panel-width' as string]: `${prdWidth}px`,
+        ['--prd-panel-offset' as string]: prdOpen ? `${prdWidth}px` : '0px',
+      }}
+    >
+      <div className="prd-prototype-area">
       {/* 一级页面 */}
       {!selectedTextbook && <TextbookListPage />}
 
@@ -7472,10 +8116,24 @@ setNewTextbookPhase('senior');
 
       {/* 同步课程选择弹窗 */}
       {showCourseSelector && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          {...(!previewingCourse ? { 'data-req-surface': 'dialog' } : {})}
+        >
           <div className="bg-white rounded-lg shadow-xl w-[800px] h-[70vh] overflow-visible flex flex-col">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">从资源库选择<PrdTooltip data={prd207.courseSelectorDialogTitle} className="ml-1" /></h3>
+              <h3
+                className="font-semibold text-gray-900"
+                {...(courseSelectorTarget === 'topic'
+                  ? { 'data-req-anchor': 'textbook-tree.chapter-topic.course-selector-dialog' }
+                  : courseSelectorTarget === 'extension'
+                    ? { 'data-req-anchor': 'textbook-tree.chapter-extension.course-selector-dialog' }
+                    : courseSelectorTarget === 'leaf'
+                      ? { 'data-req-anchor': 'textbook-tree.chapter-topic.leaf-course-selector-title' }
+                      : {})}
+              >
+                从资源库选择<PrdTooltip data={prd207.courseSelectorDialogTitle} className="ml-1" />
+              </h3>
               <button
                 onClick={() => {
                   setShowCourseSelector(false);
@@ -7515,7 +8173,13 @@ setNewTextbookPhase('senior');
                   {availableCourses
                     .filter(
                       (course) =>
-                        !selectedChapter?.courses?.find((c) => c.id === course.id) &&
+                        !(
+                          courseSelectorTarget === 'leaf'
+                            ? selectedChapter?.courses
+                            : selectedChapter
+                              ? getCourseBundle(selectedChapter, courseSelectorTarget).courses
+                              : []
+                        )?.find((c) => c.id === course.id) &&
                         !tempSelectedCourses.find((c) => c.id === course.id) &&
                         course.name.toLowerCase().includes(courseSearchKeyword.toLowerCase())
                     )
@@ -7532,7 +8196,6 @@ setNewTextbookPhase('senior');
                             <p className="text-sm font-medium text-gray-900 truncate">{course.name}</p>
                             <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
                               <span>{course.duration}</span>
-                              {course.teacher && <span>{course.teacher}</span>}
                             </div>
                           </div>
                         </div>
@@ -7555,7 +8218,13 @@ setNewTextbookPhase('senior');
                     ))}
                   {availableCourses.filter(
                     (course) =>
-                      !selectedChapter?.courses?.find((c) => c.id === course.id) &&
+                      !(
+                        courseSelectorTarget === 'leaf'
+                          ? selectedChapter?.courses
+                          : selectedChapter
+                            ? getCourseBundle(selectedChapter, courseSelectorTarget).courses
+                            : []
+                      )?.find((c) => c.id === course.id) &&
                       !tempSelectedCourses.find((c) => c.id === course.id) &&
                       course.name.toLowerCase().includes(courseSearchKeyword.toLowerCase())
                   ).length === 0 && (
@@ -7593,12 +8262,6 @@ setNewTextbookPhase('senior');
                               <p className="text-sm font-medium text-gray-900 truncate">{course.name}</p>
                               <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
                                 <span>{course.duration}</span>
-                                {course.teacher && (
-                                  <span className="flex items-center gap-0.5">
-                                    <User className="w-3 h-3" />
-                                    {course.teacher}
-                                  </span>
-                                )}
                               </div>
                             </div>
                           </div>
@@ -7653,8 +8316,15 @@ setNewTextbookPhase('senior');
                       const update = (chapters: Chapter[]): Chapter[] => {
                         return chapters.map(chapter => {
                           if (chapter.id === chapterId) {
-                            const existingCourses = chapter.courses || [];
-                            return { ...chapter, courses: [...existingCourses, ...tempSelectedCourses] };
+                            if (courseSelectorTarget === 'leaf') {
+                              const existingCourses = chapter.courses || [];
+                              return { ...chapter, courses: [...existingCourses, ...tempSelectedCourses] };
+                            }
+                            const bundle = getCourseBundle(chapter, courseSelectorTarget);
+                            return setCourseBundle(chapter, courseSelectorTarget, {
+                              ...bundle,
+                              courses: [...bundle.courses, ...tempSelectedCourses],
+                            });
                           }
                           if (chapter.children) {
                             return { ...chapter, children: update(chapter.children) };
@@ -7691,11 +8361,21 @@ setNewTextbookPhase('senior');
 
       {/* 上传课程弹窗 */}
       {showUploadCourseDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          data-req-surface="dialog"
+        >
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full overflow-hidden flex flex-col">
             {/* 弹窗头部 */}
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">
+              <h3
+                className="font-semibold text-gray-900"
+                {...(courseSelectorTarget === 'topic'
+                  ? { 'data-req-anchor': 'textbook-tree.chapter-topic.upload-dialog' }
+                  : courseSelectorTarget === 'extension'
+                    ? { 'data-req-anchor': 'textbook-tree.chapter-extension.upload-dialog' }
+                    : {})}
+              >
                 上传课程
                 <PrdTooltip data={prd206.uploadCourseDialogTitle} className="ml-1" />
               </h3>
@@ -7790,13 +8470,6 @@ setNewTextbookPhase('senior');
                             <p className="text-sm text-gray-700 truncate">{item.name}</p>
                             <span className="text-xs text-gray-400 flex-shrink-0">{item.size}</span>
                           </div>
-                          {/* 上传完成后显示教师信息 */}
-                          {item.status === 'success' && (
-                            <div className="flex items-center gap-1 mt-0.5 text-xs text-gray-500">
-                              <User className="w-3 h-3" />
-                              <span>张老师</span>
-                            </div>
-                          )}
                           {/* 上传进度条 */}
                           {item.status === 'uploading' && (
                             <div className="mt-1.5">
@@ -7898,10 +8571,20 @@ setNewTextbookPhase('senior');
 
       {/* 课程预览弹窗 */}
       {previewingCourse && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]"
+          data-req-surface="preview"
+        >
           <div className="bg-white rounded-lg shadow-xl w-[700px] max-h-[90vh] overflow-hidden flex flex-col">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">{previewingCourse.name}<PrdTooltip data={prd207.courseSelectorPreview} className="ml-1" /></h3>
+              <h3
+                className="font-semibold text-gray-900"
+                {...(selectedChapter?.level === 'chapter' && chapterCourseKindTab === 'topic'
+                  ? { 'data-req-anchor': 'textbook-tree.chapter-topic.preview' }
+                  : selectedChapter?.level === 'chapter' && chapterCourseKindTab === 'extension'
+                    ? { 'data-req-anchor': 'textbook-tree.chapter-extension.preview' }
+                    : {})}
+              >{previewingCourse.name}<PrdTooltip data={prd207.courseSelectorPreview} className="ml-1" /></h3>
               <button
                 onClick={() => setPreviewingCourse(null)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -7935,11 +8618,21 @@ setNewTextbookPhase('senior');
 
       {/* 练习试卷选择弹窗 */}
       {showExamSelector && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          {...(!previewExam ? { 'data-req-surface': 'dialog' } : {})}
+        >
           <div className="bg-white rounded-lg shadow-xl w-[800px] h-[70vh] overflow-hidden flex flex-col">
             {/* 标题栏 */}
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">从资源库选择<PrdTooltip data={prd209.examSelectorDialogTitle} className="ml-1" /></h3>
+              <h3
+                className="font-semibold text-gray-900"
+                {...(examSelectorTarget === 'chapter-topic'
+                  ? { 'data-req-anchor': 'textbook-tree.chapter-topic.exam-selector-dialog' }
+                  : examSelectorTarget === 'chapter-extension'
+                    ? { 'data-req-anchor': 'textbook-tree.chapter-extension.exam-selector-dialog' }
+                    : {})}
+              >从资源库选择<PrdTooltip data={prd209.examSelectorDialogTitle} className="ml-1" /></h3>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-400">确认规则</span>
                 <PrdTooltip data={prd209.examSelectorConfirm} />
@@ -7980,7 +8673,7 @@ setNewTextbookPhase('senior');
                   {availableExams
                     .filter(
                       (exam) =>
-                        !selectedChapter?.exams?.find((e) => e.id === exam.id) &&
+                        !getTargetExamList(selectedChapter, examSelectorTarget).find((e) => e.id === exam.id) &&
                         !tempSelectedExams.find((e) => e.id === exam.id) &&
                         exam.name.toLowerCase().includes(examSearchKeyword.toLowerCase())
                     )
@@ -8020,7 +8713,7 @@ setNewTextbookPhase('senior');
                     ))}
                   {availableExams.filter(
                     (exam) =>
-                      !selectedChapter?.exams?.find((e) => e.id === exam.id) &&
+                      !getTargetExamList(selectedChapter, examSelectorTarget).find((e) => e.id === exam.id) &&
                       !tempSelectedExams.find((e) => e.id === exam.id) &&
                       exam.name.toLowerCase().includes(examSearchKeyword.toLowerCase())
                   ).length === 0 && (
@@ -8058,10 +8751,19 @@ setNewTextbookPhase('senior');
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-900 truncate">{exam.name}</p>
-                              <div className="flex items-center gap-2 mt-0.5">
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 rounded">资源库</span>
                                 <span className="text-xs text-gray-500">{exam.questionCount}题</span>
                                 <span className="text-xs text-gray-500">{exam.totalScore}分</span>
+                              </div>
+                              <div className="mt-1.5 text-xs text-gray-500">
+                                {renderEstimatedDuration(exam, true, (minutes) => {
+                                  setTempSelectedExams((prev) =>
+                                    prev.map((item) =>
+                                      item.id === exam.id ? { ...item, duration: minutes } : item,
+                                    ),
+                                  );
+                                })}
                               </div>
                             </div>
                           </div>
@@ -8112,17 +8814,9 @@ setNewTextbookPhase('senior');
                   if (selectedChapterId && tempSelectedExams.length > 0) {
                     // 检测重复试卷
                     const existingExamNames = new Set<string>();
-                    const collectExistingExams = (chapters: Chapter[]) => {
-                      for (const ch of chapters) {
-                        if (ch.exams) {
-                          ch.exams.forEach(e => existingExamNames.add(e.name));
-                        }
-                        if (ch.children) {
-                          collectExistingExams(ch.children);
-                        }
-                      }
-                    };
-                    collectExistingExams(chapters);
+                    getTargetExamList(selectedChapter, examSelectorTarget).forEach((e) =>
+                      existingExamNames.add(e.name)
+                    );
 
                     // 收集所有待添加的试卷名称
                     const pendingExamNames = new Set<string>();
@@ -8431,7 +9125,10 @@ setNewTextbookPhase('senior');
 
       {/* 试卷预览弹窗 */}
       {previewExam && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]"
+          data-req-surface="preview"
+        >
           <div className="bg-white rounded-lg shadow-xl w-[700px] max-h-[85vh] overflow-hidden flex flex-col">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -8439,7 +9136,16 @@ setNewTextbookPhase('senior');
                   <ClipboardList className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-gray-900">{previewExam.name}<PrdTooltip data={prd209.examPreviewDialog} className="ml-1" /></h3>
+                  <h3
+                    className="font-semibold text-gray-900"
+                    {...(selectedChapter?.level === 'chapter' && chapterCourseKindTab === 'topic'
+                      ? { 'data-req-anchor': 'textbook-tree.chapter-topic.preview' }
+                      : selectedChapter?.level === 'chapter' && chapterCourseKindTab === 'extension'
+                        ? { 'data-req-anchor': 'textbook-tree.chapter-extension.preview' }
+                        : {})}
+                  >
+                    {previewExam.name}<PrdTooltip data={prd209.examPreviewDialog} className="ml-1" />
+                  </h3>
                   <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500">
                     <span>{previewExam.questionCount}题</span>
                     <span>{previewExam.totalScore}分</span>
@@ -8690,7 +9396,10 @@ setNewTextbookPhase('senior');
 
       {/* 批量删除试卷弹窗 */}
       {showBatchDeleteExamDialog && selectedChapterId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          data-req-surface="dialog"
+        >
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden">
             {/* 弹窗头部 */}
             <div className="p-5 border-b border-gray-200">
@@ -8719,7 +9428,15 @@ setNewTextbookPhase('senior');
                     const update = (chapters: Chapter[]): Chapter[] => {
                       return chapters.map(chapter => {
                         if (chapter.id === selectedChapterId) {
-                          return { ...chapter, exams: [] };
+                          if (batchDeleteExamTarget.startsWith('chapter-')) {
+                            const kind = batchDeleteExamTarget.replace('chapter-', '') as ChapterCourseKind;
+                            const bundle = getCourseBundle(chapter, kind);
+                            return setCourseBundle(chapter, kind, { ...bundle, exams: [] });
+                          }
+                          return {
+                            ...chapter,
+                            [batchDeleteExamTarget === 'companionExams' ? 'companionExams' : 'exams']: [],
+                          };
                         }
                         if (chapter.children) {
                           return { ...chapter, children: update(chapter.children) };
@@ -8828,7 +9545,10 @@ setNewTextbookPhase('senior');
                     {pendingLeafNodeData.exams && pendingLeafNodeData.exams.length > 0 && (
                       <li>已维护的 {pendingLeafNodeData.exams.length} 个练习试卷</li>
                     )}
-                    {!pendingLeafNodeData.knowledgePoints?.length && !pendingLeafNodeData.courses?.length && !pendingLeafNodeData.exams?.length && (
+                    {pendingLeafNodeData.companionExams && pendingLeafNodeData.companionExams.length > 0 && (
+                      <li>已维护的 {pendingLeafNodeData.companionExams.length} 套同步课配套试卷</li>
+                    )}
+                    {!pendingLeafNodeData.knowledgePoints?.length && !pendingLeafNodeData.courses?.length && !pendingLeafNodeData.exams?.length && !pendingLeafNodeData.companionExams?.length && (
                       <li>无直接维护数据（可安全添加）</li>
                     )}
                   </ul>
@@ -8876,7 +9596,8 @@ setNewTextbookPhase('senior');
                             ...chapter,
                             knowledgePoints: [],
                             courses: [],
-                            exams: []
+                            exams: [],
+                            companionExams: [],
                           };
                         }
                         if (chapter.children) {
@@ -9252,9 +9973,26 @@ setNewTextbookPhase('senior');
         }}
       />
 
-      {/* 文档标注组件 */}
-      <DocPanel currentPath="/system-settings/textbook-tree" />
+      <RequirementMarkerHost
+        scopeId={TEXTBOOK_CHAPTER_COURSE_SCOPE_ID}
+        registryIds={[...TEXTBOOK_CHAPTER_COURSE_REGISTRY_IDS]}
+        excludeIds={[...TEXTBOOK_CHAPTER_COURSE_EXCLUDE_IDS]}
+        refreshKey={`${isEditingDetail}-${selectedChapterId ?? ''}-${activeTab}-${chapterCourseHighTab}-${chapterCourseKindTab}-${showCourseSelector}-${showUploadCourseDialog}-${showExamSelector}-${showBatchDeleteExamDialog}-${previewingCourse?.id ?? ''}-${previewExam?.id ?? ''}-${courseSelectorTarget}-${examSelectorTarget}-${batchDeleteExamTarget}`}
+      />
 
+      </div>
+      {prdOpen ? (
+        <RequirementPanel
+          scopeId={TEXTBOOK_CHAPTER_COURSE_SCOPE_ID}
+          registryIds={TEXTBOOK_CHAPTER_COURSE_REGISTRY_IDS}
+          excludeIds={TEXTBOOK_CHAPTER_COURSE_EXCLUDE_IDS}
+          width={prdWidth}
+          onWidthChange={setPrdWidth}
+          onClose={() => setPrdOpen(false)}
+          kicker="章节维度 · 课程"
+          ariaLabel="章节课程 PRD 阅读面板"
+        />
+      ) : null}
     </div>
   );
 }

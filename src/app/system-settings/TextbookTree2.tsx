@@ -70,7 +70,6 @@ import AggregateHistoryModal, { AggregateHistoryItem } from '@/components/shared
 import KnowledgeSelectorTree, { getBatchChildIds } from '@/components/shared/KnowledgeSelectorTree';
 import KnowledgeNetworkGraph from '@/components/shared/KnowledgeNetworkGraph';
 import SectionKnowledgeGraph from '@/components/shared/SectionKnowledgeGraph';
-import DocPanel from '@/components/shared/DocPanel';
 import TextbookImportValidationModal from '@/components/shared/TextbookImportValidationModal';
 import PrdTooltip from '@/components/shared/PrdTooltip';
 import * as prd200 from '@/data/prd-rules/textbook-tree-2.00';
@@ -193,7 +192,7 @@ interface Exam {
   name: string;
   questionCount: number;  // 题目数量
   totalScore: number;     // 总分
-  duration: number;       // 考试时长（分钟）
+  duration: number;       // 预计用时（分钟），选卷后可按试卷单独设置
   difficulty?: 'easy' | 'medium' | 'hard';
   // 上传相关字段
   sourceType?: 'upload' | 'library' | 'workbook';  // 来源类型
@@ -1802,6 +1801,69 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
   );
 
   // 练习试卷卡片 - 统一渲染，聚合态与详情态样式一致
+  const parseEstimatedMinutes = (raw: string): number | null => {
+    const trimmed = raw.trim();
+    if (trimmed === '') return 0;
+    const n = parseInt(trimmed, 10);
+    if (isNaN(n) || n < 1) return null;
+    return Math.min(n, 999);
+  };
+
+  const updateExamDuration = (examId: string, minutes: number) => {
+    if (!selectedChapter) return;
+    setChapters((prev) =>
+      prev.map((chapter) => {
+        const patch = (node: Chapter): Chapter => {
+          if (node.id === selectedChapter.id) {
+            return {
+              ...node,
+              exams: (node.exams || []).map((exam) =>
+                exam.id === examId ? { ...exam, duration: minutes } : exam,
+              ),
+            };
+          }
+          if (node.children) {
+            return { ...node, children: node.children.map(patch) };
+          }
+          return node;
+        };
+        return patch(chapter);
+      }),
+    );
+  };
+
+  const renderEstimatedDuration = (
+    exam: Exam,
+    editable: boolean,
+    onMinutesChange: (minutes: number) => void,
+  ) => (
+    <span className="flex items-center gap-1">
+      <Clock className="w-3 h-3" />
+      {editable ? (
+        <>
+          <span>预计用时</span>
+          <input
+            type="number"
+            min={1}
+            max={999}
+            className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-center bg-white text-gray-800"
+            value={exam.duration > 0 ? exam.duration : ''}
+            placeholder="—"
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => {
+              const next = parseEstimatedMinutes(event.target.value);
+              if (next === null) return;
+              onMinutesChange(next);
+            }}
+          />
+          <span>分钟</span>
+        </>
+      ) : (
+        <span>{exam.duration > 0 ? `预计用时 ${exam.duration} 分钟` : '预计用时未设置'}</span>
+      )}
+    </span>
+  );
+
   const renderExamCard = (exam: Exam, showRemove: boolean = true) => (
     <div
       key={exam.id}
@@ -1825,9 +1887,14 @@ const [newTextbookPhase, setNewTextbookPhase] = useState('senior'); // 学段
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
           <span>{exam.questionCount}题</span>
           <span>{exam.totalScore}分</span>
+          {renderEstimatedDuration(
+            exam,
+            Boolean(showRemove && isEditingDetail && selectedChapter),
+            (minutes) => updateExamDuration(exam.id, minutes),
+          )}
         </div>
       </div>
       <div className="flex items-center gap-1">
@@ -7947,10 +8014,19 @@ setNewTextbookPhase('senior');
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-900 truncate">{exam.name}</p>
-                              <div className="flex items-center gap-2 mt-0.5">
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 rounded">资源库</span>
                                 <span className="text-xs text-gray-500">{exam.questionCount}题</span>
                                 <span className="text-xs text-gray-500">{exam.totalScore}分</span>
+                              </div>
+                              <div className="mt-1.5 text-xs text-gray-500">
+                                {renderEstimatedDuration(exam, true, (minutes) => {
+                                  setTempSelectedExams((prev) =>
+                                    prev.map((item) =>
+                                      item.id === exam.id ? { ...item, duration: minutes } : item,
+                                    ),
+                                  );
+                                })}
                               </div>
                             </div>
                           </div>
@@ -9197,9 +9273,6 @@ setNewTextbookPhase('senior');
           publisherOptions: scenes.map(p => ({ id: p.id, label: p.name })),
         }}
       />
-
-      {/* 文档标注组件 */}
-      <DocPanel currentPath="/system-settings/textbook-tree" />
 
     </div>
   );

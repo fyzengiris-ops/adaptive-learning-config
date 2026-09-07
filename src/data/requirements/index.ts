@@ -1,11 +1,55 @@
-import type { RequirementRegistry } from './schema';
+import type { RequirementItem, RequirementRegistry } from './schema';
 import { knowledgeTreeInfoAcademicRequirementRegistry } from './knowledge-tree-info-academic-requirement.registry';
+import { knowledgeTreeRelatedExamRegistry } from './knowledge-tree-related-exam.registry';
+import { knowledgeTreeLearningResourceKnowledgeCardRegistry } from './knowledge-tree-learning-resource-knowledge-card.registry';
+import { textbookTreeChapterTopicCourseRegistry } from './textbook-tree-chapter-topic-course.registry';
+import { textbookTreeChapterExtensionCourseRegistry } from './textbook-tree-chapter-extension-course.registry';
+import academicRequirementOverlay from './overlays/knowledge-tree-info-academic-requirement.json';
+import relatedExamOverlay from './overlays/knowledge-tree-related-exam.json';
+import knowledgeCardOverlay from './overlays/knowledge-tree-learning-resource-knowledge-card.json';
+import textbookChapterTopicOverlay from './overlays/textbook-tree-chapter-topic-course.json';
+import textbookChapterExtensionOverlay from './overlays/textbook-tree-chapter-extension-course.json';
+import type { RequirementLogicOverlay } from '@/lib/requirementLogicEdits';
+import { mergeRequirementWithPatch } from '@/lib/requirementLogicEdits';
 
 export * from './schema';
 export { knowledgeTreeInfoAcademicRequirementRegistry } from './knowledge-tree-info-academic-requirement.registry';
+export { knowledgeTreeRelatedExamRegistry } from './knowledge-tree-related-exam.registry';
+export { knowledgeTreeLearningResourceKnowledgeCardRegistry } from './knowledge-tree-learning-resource-knowledge-card.registry';
+export { textbookTreeChapterTopicCourseRegistry } from './textbook-tree-chapter-topic-course.registry';
+export { textbookTreeChapterExtensionCourseRegistry } from './textbook-tree-chapter-extension-course.registry';
+
+function applyOverlay(
+  registry: RequirementRegistry,
+  overlay: RequirementLogicOverlay
+): RequirementRegistry {
+  if (!overlay || Object.keys(overlay).length === 0) return registry;
+  return {
+    ...registry,
+    requirements: registry.requirements.map((item: RequirementItem) =>
+      mergeRequirementWithPatch(item, overlay[item.id])
+    ),
+  };
+}
 
 const registries: RequirementRegistry[] = [
-  knowledgeTreeInfoAcademicRequirementRegistry,
+  applyOverlay(
+    knowledgeTreeInfoAcademicRequirementRegistry,
+    academicRequirementOverlay as RequirementLogicOverlay
+  ),
+  applyOverlay(knowledgeTreeRelatedExamRegistry, relatedExamOverlay as RequirementLogicOverlay),
+  applyOverlay(
+    knowledgeTreeLearningResourceKnowledgeCardRegistry,
+    knowledgeCardOverlay as RequirementLogicOverlay
+  ),
+  applyOverlay(
+    textbookTreeChapterTopicCourseRegistry,
+    textbookChapterTopicOverlay as RequirementLogicOverlay
+  ),
+  applyOverlay(
+    textbookTreeChapterExtensionCourseRegistry,
+    textbookChapterExtensionOverlay as RequirementLogicOverlay
+  ),
 ];
 
 export function getAllRequirementRegistries(): RequirementRegistry[] {
