@@ -4,11 +4,13 @@ import { knowledgeTreeRelatedExamRegistry } from './knowledge-tree-related-exam.
 import { knowledgeTreeLearningResourceKnowledgeCardRegistry } from './knowledge-tree-learning-resource-knowledge-card.registry';
 import { textbookTreeChapterTopicCourseRegistry } from './textbook-tree-chapter-topic-course.registry';
 import { textbookTreeChapterExtensionCourseRegistry } from './textbook-tree-chapter-extension-course.registry';
+import { textbookTreeTextbookCourseOverviewRegistry } from './textbook-tree-textbook-course-overview.registry';
 import academicRequirementOverlay from './overlays/knowledge-tree-info-academic-requirement.json';
 import relatedExamOverlay from './overlays/knowledge-tree-related-exam.json';
 import knowledgeCardOverlay from './overlays/knowledge-tree-learning-resource-knowledge-card.json';
 import textbookChapterTopicOverlay from './overlays/textbook-tree-chapter-topic-course.json';
 import textbookChapterExtensionOverlay from './overlays/textbook-tree-chapter-extension-course.json';
+import textbookCourseOverviewOverlay from './overlays/textbook-tree-textbook-course-overview.json';
 import type { RequirementLogicOverlay } from '@/lib/requirementLogicEdits';
 import { mergeRequirementWithPatch } from '@/lib/requirementLogicEdits';
 
@@ -18,6 +20,7 @@ export { knowledgeTreeRelatedExamRegistry } from './knowledge-tree-related-exam.
 export { knowledgeTreeLearningResourceKnowledgeCardRegistry } from './knowledge-tree-learning-resource-knowledge-card.registry';
 export { textbookTreeChapterTopicCourseRegistry } from './textbook-tree-chapter-topic-course.registry';
 export { textbookTreeChapterExtensionCourseRegistry } from './textbook-tree-chapter-extension-course.registry';
+export { textbookTreeTextbookCourseOverviewRegistry } from './textbook-tree-textbook-course-overview.registry';
 
 function applyOverlay(
   registry: RequirementRegistry,
@@ -49,6 +52,10 @@ const registries: RequirementRegistry[] = [
   applyOverlay(
     textbookTreeChapterExtensionCourseRegistry,
     textbookChapterExtensionOverlay as RequirementLogicOverlay
+  ),
+  applyOverlay(
+    textbookTreeTextbookCourseOverviewRegistry,
+    textbookCourseOverviewOverlay as RequirementLogicOverlay
   ),
 ];
 

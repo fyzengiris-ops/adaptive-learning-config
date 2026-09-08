@@ -343,7 +343,7 @@ export const knowledgeTreeLearningResourceKnowledgeCardRegistry: RequirementRegi
           title: '操作说明',
           items: [
             '每点击一次，在当前要点列表末尾新增一个空白要点输入位；不覆盖已有要点，不弹出确认。',
-            '可连续多次添加。',
+            '可连续多次添加。\n\n【9.8需求评审后补充】\n[核心概念的要点]、以及后面的[自定义模块]、[自定义模块的条目]、[解题步骤]、[解题要点]，[Tips]，这六项数据的上限都是50个',
             '点击后不自动把光标移入新要点。',
             '新增后，若要点多于一条，各要点显示序号，并可用上移、下移调整顺序。',
           ],
@@ -1038,7 +1038,9 @@ export const knowledgeTreeLearningResourceKnowledgeCardRegistry: RequirementRegi
       logicSections: [
         {
           title: '数据来源',
-          items: ['题目来自当前教研员账号的个人资源库。'],
+          items: [
+            '题目来自当前教研员账号的个人资源库。',
+          ],
         },
         {
           title: '显示说明',
@@ -1052,13 +1054,15 @@ export const knowledgeTreeLearningResourceKnowledgeCardRegistry: RequirementRegi
         {
           title: '操作说明',
           items: [
-            '搜索只匹配题干关键词。',
+            '搜索只匹配题干关键词。\n\n【9.8需求评审后补充】\n通过题干搜索典型例题时，搜索的准确性，和线上保持一致即可',
             '仅右上角可关闭；点击遮罩不关闭。关闭后清空搜索词和展开状态。',
           ],
         },
         {
           title: '异常情况处理',
-          items: ['无匹配题目时展示「暂无符合条件的题目」。'],
+          items: [
+            '无匹配题目时展示「暂无符合条件的题目」。',
+          ],
         },
       ],
       acceptance: [
