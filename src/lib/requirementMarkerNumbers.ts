@@ -21,10 +21,10 @@ function readRetiredMarkerNumbers(): number[] {
   }
 }
 
-const WITHDRAWN_MARKER_IDS = ['KT_KC_EX-005', 'KT_KC_EX-002'];
+const WITHDRAWN_MARKER_IDS = ['KT_KC_EX-005', 'KT_KC_EX-002', 'KT_KC_EXB-001'];
 
 /**
- * 已撤回的角标：内置例题、填空题挖空。
+ * 已撤回的角标：内置例题、填空题挖空、方案B的编辑方案切换。
  * 删掉旧编号，不再把这些序号发给其他需求。
  */
 export function retireWithdrawnMarkerNumbers(scopeId: string): void {

@@ -99,6 +99,7 @@ import {
   KNOWLEDGE_TREE_DETAIL_SCOPE_ID,
 } from '@/data/requirements/knowledgeTreeDetailMarkers';
 import { knowledgeTreeKnowledgeCardExampleDeltaRegistry } from '@/data/requirements/knowledge-tree-knowledge-card-example-delta.registry';
+import { knowledgeTreeKnowledgeCardExampleSchemeBRegistry } from '@/data/requirements/knowledge-tree-knowledge-card-example-scheme-b.registry';
 import {
   highlightReqAnchor,
   REQ_PRD_ACTIVATE,
@@ -3025,13 +3026,24 @@ export default function KnowledgeTree({ onDetailViewChange, location, onLocation
   
   // 知识点详情编辑模式状态
   const [isEditingDetail, setIsEditingDetail] = useState(restored.editing);
-  const [prdView, setPrdView] = useState<'baseline' | 'current' | null>(null);
+  const [prdView, setPrdView] = useState<'baseline' | 'current' | 'scheme-b' | null>(null);
   const prdOpen = prdView !== null;
-  const openPrd = (view: 'baseline' | 'current') => {
+  const commitPrdView = (view: 'baseline' | 'current' | 'scheme-b' | null) => {
+    document.documentElement.classList.toggle('is-prd-scheme-b', view === 'scheme-b');
+    setPrdView(view);
+  };
+  useEffect(() => {
+    return () => document.documentElement.classList.remove('is-prd-scheme-b');
+  }, []);
+  const openPrd = (view: 'baseline' | 'current' | 'scheme-b') => {
+    if (view === 'scheme-b') {
+      commitPrdView(prdView === 'scheme-b' ? null : 'scheme-b');
+      return;
+    }
     const hiddenClass = view === 'baseline' ? 'prd-baseline-hidden' : 'prd-current-hidden';
     const hidden = document.documentElement.classList.contains(hiddenClass);
     revealPrdScope(view);
-    setPrdView((prev) => (hidden || prev !== view ? view : null));
+    commitPrdView(hidden || prdView !== view ? view : null);
   };
   const [prdWidth, setPrdWidth] = useState(360);
   const [kcPrdCommand, setKcPrdCommand] = useState<KnowledgeCardPrdCommand | null>(null);
@@ -5642,8 +5654,13 @@ export default function KnowledgeTree({ onDetailViewChange, location, onLocation
           />
           <PrdToggleButton
             open={prdView === 'current'}
-            label="PRD 本次"
+            label="PRD 方案A"
             onClick={() => openPrd('current')}
+          />
+          <PrdToggleButton
+            open={prdView === 'scheme-b'}
+            label="PRD 方案B"
+            onClick={() => openPrd('scheme-b')}
           />
           {!isTeacher && (
             <>
@@ -7426,8 +7443,13 @@ export default function KnowledgeTree({ onDetailViewChange, location, onLocation
               />
               <PrdToggleButton
                 open={prdView === 'current'}
-                label="PRD 本次"
+                label="PRD 方案A"
                 onClick={() => openPrd('current')}
+              />
+              <PrdToggleButton
+                open={prdView === 'scheme-b'}
+                label="PRD 方案B"
+                onClick={() => openPrd('scheme-b')}
               />
               <button
               onClick={() => setShowAggregateHistory(true)}
@@ -8388,6 +8410,7 @@ export default function KnowledgeTree({ onDetailViewChange, location, onLocation
         registryIds={[
           ...KNOWLEDGE_TREE_DETAIL_REGISTRY_IDS,
           knowledgeTreeKnowledgeCardExampleDeltaRegistry.registryId,
+          knowledgeTreeKnowledgeCardExampleSchemeBRegistry.registryId,
         ]}
         excludeIds={[...KNOWLEDGE_TREE_DETAIL_EXCLUDE_IDS]}
         refreshKey={`${isEditingDetail}-${showImportDialog}-${importValidationStatus}-${selectedNode?.id ?? ''}-${activeDetailTab}-${pendingDeleteRelatedExam?.id ?? ''}-${showAddChildConfirm}-${kcPrdCommand?.seq ?? 0}-${(isEditingDetail ? editData.relatedExamPoints : selectedNode?.relatedExamPoints)?.length ?? 0}`}
@@ -8406,14 +8429,15 @@ export default function KnowledgeTree({ onDetailViewChange, location, onLocation
           registryIds={[
             ...KNOWLEDGE_TREE_DETAIL_REGISTRY_IDS,
             knowledgeTreeKnowledgeCardExampleDeltaRegistry.registryId,
+            knowledgeTreeKnowledgeCardExampleSchemeBRegistry.registryId,
           ]}
           excludeIds={KNOWLEDGE_TREE_DETAIL_EXCLUDE_IDS}
           width={prdWidth}
           onWidthChange={setPrdWidth}
-          onClose={() => setPrdView(null)}
+          onClose={() => commitPrdView(null)}
           batch={prdView}
-          kicker={prdView === 'current' ? '本次新增' : '已有业务逻辑'}
-          ariaLabel={prdView === 'current' ? '本次新增 PRD' : '已有 PRD'}
+          kicker={prdView === 'scheme-b' ? '方案B' : prdView === 'current' ? '方案A · 本次新增' : '已有业务逻辑'}
+          ariaLabel={prdView === 'scheme-b' ? '方案B PRD' : prdView === 'current' ? '方案A PRD' : '已有 PRD'}
         />
       ) : null}
     </div>

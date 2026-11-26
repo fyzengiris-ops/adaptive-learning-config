@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import type { RequirementItem } from '@/data/requirements/schema';
 import { saveRequirementLogic } from '@/lib/requirementLogicEdits';
 import RequirementLogicEditor, { REQUIREMENT_LOGIC_EDITING } from '@/components/prd/RequirementLogicEditor';
+import { requirementScopeClass } from '@/lib/requirementPrdScope';
 
 function EditableText({
   value,
@@ -181,7 +182,7 @@ export default function RequirementFloatingCard({
   return createPortal(
     <div
       ref={cardRef}
-      className={`req-float-card ${requirement.batchId ? 'prd-scope-current' : 'prd-scope-baseline'}`}
+      className={`req-float-card ${requirementScopeClass(requirement)}`}
       style={{ left: pos.left, top: pos.top }}
       role="dialog"
       aria-label={`需求 ${displayNo}：${requirement.title}`}

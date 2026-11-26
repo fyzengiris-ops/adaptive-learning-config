@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, ChevronDown, ChevronUp, Search, X } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronUp, Pencil, Search, X } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +18,13 @@ import {
   materialChildTypeText,
   useMaterialChildTypeScheme,
 } from '@/components/shared/materialChildTypeScheme';
+import { ExampleEditSchemeSwitch, useExampleEditScheme } from '@/components/shared/exampleEditScheme';
+import QuestionBankEditorDialog, {
+  createEmptyBankEditorDraft,
+  type BankEditorDraft,
+  type BankEditorKind,
+  type BankEditorOrdinaryKind,
+} from '@/components/shared/QuestionBankEditorDialog';
 
 const CIRCLED_NUMBERS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
 const BLANK_PATTERN = /____([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]|\d+)____/g;
@@ -315,6 +322,117 @@ const QUESTION_TYPE_FILTERS = [
   { id: 'material', label: '材料题' },
 ];
 
+const OPTION_KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+function bankKind(question: BankQuestion): BankEditorKind {
+  if (question.questionType.includes('材料') || (question.children?.length ?? 0) > 0) return 'material';
+  if (question.questionType.includes('多选')) return 'multiple';
+  if (question.questionType.includes('单选') || question.questionType.includes('选择')) return 'single';
+  if (question.questionType.includes('判断')) return 'judge';
+  if (question.questionType.includes('填空')) return 'blank';
+  return 'qa';
+}
+
+function ordinaryKind(questionType: string): BankEditorOrdinaryKind {
+  const kind = bankKind({ questionType } as BankQuestion);
+  return kind === 'material' ? 'qa' : kind;
+}
+
+function splitChoiceStem(stem: string) {
+  const stemLines: string[] = [];
+  const found: Array<{ key: string; text: string }> = [];
+  stem.replace(/\r\n/g, '\n').split('\n').forEach((line) => {
+    const match = line.match(/^\s*([A-Z])\s*[.、．]\s*(.*)$/);
+    if (match) found.push({ key: match[1], text: match[2].trim() });
+    else stemLines.push(line);
+  });
+  if (found.length < 2) return null;
+  return {
+    stem: stemLines.join('\n').trim(),
+    options: found.map((item, index) => ({ key: OPTION_KEYS[index], text: item.text })),
+  };
+}
+
+function joinChoiceStem(stem: string, options: Array<{ key: string; text: string }>) {
+  const lines = options.map((item) => `${item.key}. ${item.text}`.trim());
+  return [stem.trim(), ...lines].filter((line) => line.length > 0).join('\n');
+}
+
+function kindLabel(kind: BankEditorKind | BankEditorOrdinaryKind) {
+  if (kind === 'single') return '单选题';
+  if (kind === 'multiple') return '多选题';
+  if (kind === 'judge') return '判断题';
+  if (kind === 'blank') return '填空题';
+  if (kind === 'material') return '材料题';
+  return '问答题';
+}
+
+function purposeLabel(question: BankQuestion) {
+  if (question.purposeSub?.includes('高考')) return '升学频道 / 高考 / 高考模拟';
+  if (question.purposeSub?.includes('学业')) return '升学频道 / 学业水平';
+  if (question.purpose === 'review') return question.purposeSub?.includes('月考') ? '复习 / 月考' : '复习 / 期中';
+  if (question.purpose === 'sync') return '同步课';
+  return '升学频道 / 高考 / 高考模拟';
+}
+
+function bankToDraft(question: BankQuestion, knowledgePoint?: string): BankEditorDraft {
+  const kind = bankKind(question);
+  const base = createEmptyBankEditorDraft(knowledgePoint);
+  const choice = kind !== 'material' && (kind === 'single' || kind === 'multiple') ? splitChoiceStem(question.stem) : null;
+  return {
+    ...base,
+    kind,
+    stem: choice?.stem ?? question.stem,
+    options: choice?.options ?? (kind === 'single' || kind === 'multiple' ? base.options : []),
+    answer: kind === 'material' ? '' : question.answer,
+    analysis: kind === 'material' ? '' : question.analysis,
+    category: question.category || base.category,
+    level: question.level || base.level,
+    difficulty: question.difficulty || base.difficulty,
+    purpose: purposeLabel(question),
+    children:
+      kind === 'material'
+        ? (question.children || []).map((child) => {
+            const childKind = ordinaryKind(child.questionType);
+            const childChoice = childKind === 'single' || childKind === 'multiple' ? splitChoiceStem(child.stem) : null;
+            return {
+              id: child.id,
+              kind: childKind,
+              stem: childChoice?.stem ?? child.stem,
+              options: childChoice?.options ?? [],
+              answer: child.answer,
+              analysis: child.analysis,
+            };
+          })
+        : [],
+  };
+}
+
+function applyDraftToBank(question: BankQuestion, draft: BankEditorDraft) {
+  question.questionType = kindLabel(draft.kind);
+  question.difficulty = draft.difficulty;
+  question.category = draft.category;
+  question.level = draft.level;
+  if (draft.kind === 'material') {
+    question.stem = draft.stem;
+    question.answer = '';
+    question.analysis = '';
+    question.children = draft.children.map((child) => ({
+      id: child.id,
+      questionType: kindLabel(child.kind),
+      stem: child.kind === 'single' || child.kind === 'multiple' ? joinChoiceStem(child.stem, child.options) : child.stem,
+      answer: child.answer,
+      analysis: child.analysis,
+    }));
+    return;
+  }
+  question.children = undefined;
+  question.stem =
+    draft.kind === 'single' || draft.kind === 'multiple' ? joinChoiceStem(draft.stem, draft.options) : draft.stem;
+  question.answer = draft.answer;
+  question.analysis = draft.analysis;
+}
+
 function matchesQuestionType(question: BankQuestion, filter: string) {
   if (filter === 'all') return true;
   const isMaterial = question.questionType.includes('材料') || (question.children?.length ?? 0) > 0;
@@ -329,6 +447,7 @@ function matchesQuestionType(question: BankQuestion, filter: string) {
 interface LekeQuestionPickerProps {
   open: boolean;
   hasExistingContent: boolean;
+  knowledgePointName?: string;
   onClose: () => void;
   onSelect: (question: BankQuestion) => void;
 }
@@ -336,14 +455,18 @@ interface LekeQuestionPickerProps {
 export default function LekeQuestionPicker({
   open,
   hasExistingContent,
+  knowledgePointName,
   onClose,
   onSelect,
 }: LekeQuestionPickerProps) {
   const [keyword, setKeyword] = useState('');
   const childTypeScheme = useMaterialChildTypeScheme();
+  const editScheme = useExampleEditScheme();
   const [typeFilter, setTypeFilter] = useState('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pending, setPending] = useState<BankQuestion | null>(null);
+  const [editingQuestion, setEditingQuestion] = useState<BankQuestion | null>(null);
+  const [bankRev, setBankRev] = useState(0);
 
   const list = useMemo(() => {
     const q = keyword.trim().toLowerCase();
@@ -351,7 +474,7 @@ export default function LekeQuestionPicker({
       if (q && !item.stem.toLowerCase().includes(q)) return false;
       return matchesQuestionType(item, typeFilter);
     });
-  }, [keyword, typeFilter]);
+  }, [keyword, typeFilter, bankRev]);
 
   useEffect(() => {
     if (!open) return;
@@ -382,6 +505,7 @@ export default function LekeQuestionPicker({
     setTypeFilter('all');
     setExpandedId(null);
     setPending(null);
+    setEditingQuestion(null);
     onClose();
   };
 
@@ -393,7 +517,7 @@ export default function LekeQuestionPicker({
       >
         <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl h-[88vh] overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 bg-gray-50 shrink-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <BookOpen className="w-5 h-5 text-emerald-600" />
               <h3 className="text-base font-semibold text-gray-900">
                 <span
@@ -404,6 +528,9 @@ export default function LekeQuestionPicker({
                 </span>
               </h3>
               <MaterialChildTypeSchemeSwitch />
+              <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.edit-scheme">
+                <ExampleEditSchemeSwitch />
+              </span>
             </div>
             <button
               type="button"
@@ -464,9 +591,10 @@ export default function LekeQuestionPicker({
                         : 'border-gray-200 hover:border-emerald-200 hover:shadow-sm hover:ring-1 hover:ring-emerald-100'
                     }`}
                   >
+                    <div className="flex items-start">
                     <button
                       type="button"
-                      className="w-full text-left px-4 pt-3.5 pb-3"
+                      className="min-w-0 flex-1 text-left px-4 pt-3.5 pb-3"
                       onClick={() => setExpandedId(expanded ? null : q.id)}
                     >
                       <div className="flex items-start gap-3">
@@ -501,6 +629,25 @@ export default function LekeQuestionPicker({
                         </span>
                       </div>
                     </button>
+                    {editScheme === 'bank' ? (
+                      <span
+                        className={list.indexOf(q) === 0 ? 'req-anchor-inline' : undefined}
+                        {...(list.indexOf(q) === 0
+                          ? { 'data-req-anchor': 'knowledge-tree.knowledge-card.bank-editor' }
+                          : {})}
+                      >
+                        <button
+                          type="button"
+                          aria-label="编辑"
+                          title="编辑"
+                          className="mr-3 mt-3 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-teal-200 text-teal-600 hover:bg-teal-50"
+                          onClick={() => setEditingQuestion(q)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    ) : null}
+                    </div>
 
                     {expanded ? (
                       <div className="px-4 pb-3">
@@ -605,6 +752,20 @@ export default function LekeQuestionPicker({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <QuestionBankEditorDialog
+        open={!!editingQuestion}
+        draftKey={editingQuestion?.id}
+        draft={editingQuestion ? bankToDraft(editingQuestion, knowledgePointName) : null}
+        onClose={() => setEditingQuestion(null)}
+        onSave={(draft) => {
+          if (editingQuestion) {
+            applyDraftToBank(editingQuestion, draft);
+            setBankRev((value) => value + 1);
+          }
+          setEditingQuestion(null);
+        }}
+      />
     </>,
     document.body
   );

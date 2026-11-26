@@ -21,6 +21,7 @@ import {
   saveOffsetMap,
   type MarkerOffset,
 } from '@/lib/requirementMarkerOffsets';
+import { requirementScopeClass } from '@/lib/requirementPrdScope';
 import {
   isStaleLogicPatch,
   loadLogicOverlay,
@@ -78,7 +79,8 @@ function isOverflowClipValue(value: string): boolean {
 }
 
 function getActiveReqSurface(): HTMLElement | null {
-  return document.querySelector('[data-req-surface]');
+  const nodes = document.querySelectorAll('[data-req-surface]');
+  return (nodes[nodes.length - 1] as HTMLElement | undefined) ?? null;
 }
 
 function findAnchorHost(anchorId: string): HTMLElement | null {
@@ -753,18 +755,22 @@ export default function RequirementMarkerHost({
   return (
     <>
       {mounted.map(({ requirement, host, displayNo }, index) => {
-        const nudge = requirement.batchId
-          ? mounted.slice(0, index).filter(
-              (item) => item.requirement.batchId && item.requirement.anchorId === requirement.anchorId
-            ).length + 1
-          : 0;
+        const scopeClass = requirementScopeClass(requirement);
+        const nudge =
+          scopeClass === 'prd-scope-baseline'
+            ? 0
+            : mounted.slice(0, index).filter(
+                (item) =>
+                  requirementScopeClass(item.requirement) === scopeClass &&
+                  item.requirement.anchorId === requirement.anchorId
+              ).length + 1;
         return (
         <MarkerPositionLayer
           key={requirement.id}
           host={host}
           offset={offsets[requirement.id]}
           dragging={draggingId === requirement.id}
-          scopeClass={requirement.batchId ? 'prd-scope-current' : 'prd-scope-baseline'}
+          scopeClass={scopeClass}
           nudge={nudge}
         >
           <ReqMarkerButton

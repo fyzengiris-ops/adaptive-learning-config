@@ -9,6 +9,7 @@ import {
 import { loadNumberMapWithLegacyMerge, REQ_MARKER_NUMBERS_CHANGED } from '@/lib/requirementMarkerNumbers';
 import { readRequirementLogic, REQ_LOGIC_CHANGED, saveRequirementLogic } from '@/lib/requirementLogicEdits';
 import RequirementLogicEditor from '@/components/prd/RequirementLogicEditor';
+import { requirementPrdLane } from '@/lib/requirementPrdScope';
 import {
   dispatchPrdActivate,
   dispatchPrdSelect,
@@ -64,7 +65,7 @@ export default function RequirementPanel({
   width: number;
   onWidthChange: (next: number) => void;
   onClose: () => void;
-  batch?: 'baseline' | 'current';
+  batch?: 'baseline' | 'current' | 'scheme-b';
   kicker?: string;
   ariaLabel?: string;
 }) {
@@ -115,9 +116,7 @@ export default function RequirementPanel({
   }, []);
 
   const sorted = useMemo(() => {
-    const source = requirements.filter((item) =>
-      batch === 'current' ? Boolean(item.batchId) : !item.batchId
-    );
+    const source = requirements.filter((item) => requirementPrdLane(item) === batch);
     return [...source].sort((a, b) => {
       const na = numberMap[a.id] ?? Number.MAX_SAFE_INTEGER;
       const nb = numberMap[b.id] ?? Number.MAX_SAFE_INTEGER;
@@ -154,7 +153,9 @@ export default function RequirementPanel({
 
   return (
     <aside
-      className={`prd-panel ${batch === 'current' ? 'prd-scope-current' : 'prd-scope-baseline'}`}
+      className={`prd-panel ${
+        batch === 'scheme-b' ? 'prd-scope-scheme-b' : batch === 'current' ? 'prd-scope-current' : 'prd-scope-baseline'
+      }`}
       style={{ width: panelWidth }}
       aria-label={ariaLabel}
     >

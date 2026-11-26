@@ -14,6 +14,7 @@ import {
   GripVertical,
   X,
   Link2,
+  Pencil,
   Undo2,
   Redo2,
   Bold,
@@ -36,6 +37,12 @@ import {
   materialChildTypeText,
   useMaterialChildTypeScheme,
 } from '@/components/shared/materialChildTypeScheme';
+import { ExampleEditSchemeSwitch, useExampleEditScheme } from '@/components/shared/exampleEditScheme';
+import QuestionBankEditorDialog, {
+  createEmptyBankEditorDraft,
+  type BankEditorDraft,
+  type BankEditorKind,
+} from '@/components/shared/QuestionBankEditorDialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -437,6 +444,7 @@ export function inverseProportionKnowledgeCard(): KnowledgeCard {
         id: 'ep-inverse-1',
         title: '反比例函数描述数量关系',
         examType: 'basic',
+        description: '两个变量的乘积是不为 0 的常数时，它们的数量关系可以写成反比例函数 y = k/x（k ≠ 0）。',
         example: seededExample(
           'q-inverse-1',
           'single',
@@ -455,11 +463,21 @@ export function inverseProportionKnowledgeCard(): KnowledgeCard {
         id: 'ep-inverse-2',
         title: '反比例函数的判断',
         examType: 'basic',
+        description: '能整理成 y = k/x（k 是不为 0 的常数）的函数，才是反比例函数。',
+        example: seededExample(
+          'q-inverse-2',
+          'single',
+          '下列函数中，是反比例函数的是（ ）。',
+          'B',
+          '反比例函数的形式是 y = k/x（k ≠ 0）。y = 2/x 中 k = 2 ≠ 0，是反比例函数。y = 2x、y = x/2 是正比例，y = 2/x + 1 多了常数项，都不是。',
+          choiceOptions(['y = 2x', 'y = 2/x', 'y = x/2', 'y = 2/x + 1']),
+        ),
       },
       {
         id: 'ep-inverse-3',
         title: '根据反比例函数定义求参数',
         examType: 'basic',
+        description: '把式子整理成 y = k/x 后，由 k ≠ 0 确定字母参数的取值范围。',
         example: seededExample(
           'q-inverse-3',
           'judge',
@@ -472,6 +490,7 @@ export function inverseProportionKnowledgeCard(): KnowledgeCard {
         id: 'ep-inverse-4',
         title: '反比例函数值的计算',
         examType: 'advanced',
+        description: '已知反比例函数解析式和自变量 x（x ≠ 0）时，代入 y = k/x 计算函数值。',
         example: seededExample(
           'q-inverse-4',
           'blank',
@@ -487,6 +506,7 @@ export function inverseProportionKnowledgeCard(): KnowledgeCard {
         id: 'ep-inverse-5',
         title: '已知反比例函数值求自变量',
         examType: 'advanced',
+        description: '已知反比例函数的函数值 y（y ≠ 0）时，由 y = k/x 求出对应的自变量 x。',
         example: seededExample(
           'q-inverse-5',
           'qa',
@@ -499,6 +519,7 @@ export function inverseProportionKnowledgeCard(): KnowledgeCard {
         id: 'ep-inverse-6',
         title: '待定系数法求反比例函数解析式',
         examType: 'advanced',
+        description: '设反比例函数为 y = k/x，把图象上一个点的坐标代入，求出 k，得到解析式。',
         example: seededExample(
           'q-inverse-6',
           'material',
@@ -513,16 +534,19 @@ export function inverseProportionKnowledgeCard(): KnowledgeCard {
         id: 'ep-inverse-7',
         title: '反比例函数图象的判断与作图',
         examType: 'sprint',
+        description: 'k > 0 时图象在第一、三象限，k < 0 时在第二、四象限。图象是双曲线，与坐标轴没有交点。',
       },
       {
         id: 'ep-inverse-8',
         title: '已知反比例函数图象判断解析式',
         examType: 'sprint',
+        description: '先看图象所在象限判断 k 的正负，再用图象上一点的坐标求出 k，从而确定解析式。',
       },
       {
         id: 'ep-inverse-9',
         title: '根据反比例函数图象对称性求点坐标',
         examType: 'sprint',
+        description: '反比例函数的图象关于原点中心对称。一个点在图象上时，它关于原点的对称点也在图象上。',
         example: seededExample(
           'q-inverse-9',
           'judge',
@@ -876,6 +900,27 @@ export function bankQuestionToExample(q: BankQuestion): KnowledgeCardExample {
             };
           })
         : [],
+  };
+}
+
+function exampleToBankDraft(example: KnowledgeCardExample, knowledgePoint?: string): BankEditorDraft {
+  const base = createEmptyBankEditorDraft(knowledgePoint);
+  const kind = (example.kind ?? 'single') as BankEditorKind;
+  return {
+    ...base,
+    kind,
+    stem: example.stem,
+    options: isOptionKind(kind) ? (example.options.length >= MIN_CHOICE_OPTIONS ? example.options : base.options) : [],
+    answer: example.answer,
+    analysis: example.analysis,
+    children: example.children.map((child) => ({
+      id: child.id,
+      kind: child.kind,
+      stem: child.stem,
+      options: child.options,
+      answer: child.answer,
+      analysis: child.analysis,
+    })),
   };
 }
 
@@ -1741,6 +1786,7 @@ const KnowledgeCardPanel = React.memo(function KnowledgeCardPanel({
       <LekeQuestionPicker
         open={!!lekePickForExamId}
         hasExistingContent={pickingHasContent}
+        knowledgePointName={pickingExam?.title}
         onClose={() => setLekePickForExamId(null)}
         onSelect={(q) => {
           if (lekePickForExamId) applyBankQuestion(lekePickForExamId, q);
@@ -2358,17 +2404,20 @@ function ExamListSection({
   count,
   children,
   anchor,
+  extra,
 }: {
   title: string;
   count: number;
   children: React.ReactNode;
   anchor?: string;
+  extra?: React.ReactNode;
 }) {
   return (
     <section className="rounded-xl bg-gray-50 px-3 py-3" {...(anchor ? { 'data-req-anchor': anchor } : {})}>
       <div className="flex items-center gap-2 px-1 pb-2.5">
         <span className="text-sm font-medium text-gray-800">{title}</span>
         <span className="text-xs text-gray-400">{count}条</span>
+        {extra ? <div className="ml-auto">{extra}</div> : null}
       </div>
       {children}
     </section>
@@ -2666,6 +2715,7 @@ function ExamPanel({
                     onRequestFocus={() => {}}
                     imeHandlers={imeHandlers}
                     stemFieldId={`${ep.id}-stem`}
+                    knowledgePointName={ep.title}
                   />
                 </div>
               )}
@@ -2677,7 +2727,15 @@ function ExamPanel({
 
   return (
     <div className="space-y-3">
-      <ExamListSection title="考点清单" count={examPoints.length}>
+      <ExamListSection
+        title="考点清单"
+        count={examPoints.length}
+        extra={
+          <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.edit-scheme">
+            <ExampleEditSchemeSwitch />
+          </span>
+        }
+      >
         {examListBody}
       </ExamListSection>
       {tipsBlock}
@@ -3142,6 +3200,7 @@ function ExampleEditor({
   imeHandlers,
   isAnchorHost,
   stemFieldId,
+  knowledgePointName,
 }: {
   example: KnowledgeCardExample;
   isEditing: boolean;
@@ -3154,10 +3213,14 @@ function ExampleEditor({
   imeHandlers: ImeHandlers;
   isAnchorHost?: boolean;
   stemFieldId?: string;
+  knowledgePointName?: string;
 }) {
   const editText = (next: KnowledgeCardExample) => onLocalChange(commitExampleChange(example, next));
   const editStruct = (next: KnowledgeCardExample) => onStructChange(commitExampleChange(example, next));
   const canClear = !!onClear && exampleHasContent(example);
+  const editScheme = useExampleEditScheme();
+  const contentEditing = isEditing && editScheme === 'inline';
+  const [bankEditorOpen, setBankEditorOpen] = useState(false);
   const [pendingKind, setPendingKind] = useState<
     | { scope: 'example'; kind: ExampleQuestionKind }
     | { scope: 'child'; id: string; kind: ExampleSubQuestion['kind'] }
@@ -3198,7 +3261,7 @@ function ExampleEditor({
       applyExampleKind(pendingKind.kind);
     } else {
       const child = example.children.find((item) => item.id === pendingKind.id);
-      if (child && pendingKind.kind !== 'material') {
+      if (child) {
         applyChildKind(child, pendingKind.kind);
       }
     }
@@ -3212,6 +3275,49 @@ function ExampleEditor({
     else editText(next);
   };
 
+  const saveBankEditor = (draft: BankEditorDraft) => {
+    const kind = draft.kind as ExampleQuestionKind;
+    let next: KnowledgeCardExample = example.kind === kind ? { ...example, kind } : withExampleKind(example, kind);
+    const mapOptions = (options: BankEditorDraft['options']) =>
+      options.map((item, index) => ({ key: OPTION_KEYS[index] || item.key, text: item.text }));
+    next = {
+      ...next,
+      kind,
+      stem: draft.stem,
+      options: isOptionKind(kind) ? mapOptions(draft.options) : [],
+      answer: kind === 'material' ? '' : draft.answer,
+      analysis: kind === 'material' ? '' : draft.analysis,
+      children:
+        kind === 'material'
+          ? draft.children.map((child) => {
+              const stem = child.kind === 'blank' ? renumberBlanks(child.stem) : child.stem;
+              const count = child.kind === 'blank' ? countBlanks(stem) : 0;
+              const rawLines = child.answer.split(/\r?\n/).map((line) => line.replace(/^\s*\d+\s*/, '').trim());
+              const blankAnswers = count > 0 ? Array.from({ length: count }, (_, index) => rawLines[index] ?? '') : undefined;
+              const mapped: ExampleSubQuestion = {
+                id: child.id,
+                kind: child.kind,
+                stem,
+                options: isOptionKind(child.kind) ? mapOptions(child.options) : [],
+                answer: blankAnswers ? formatBlankAnswers(blankAnswers) : child.answer,
+                analysis: child.analysis,
+                blankAnswers,
+              };
+              return mapped;
+            })
+          : [],
+    };
+    if (kind === 'blank') {
+      const stem = renumberBlanks(draft.stem);
+      const count = countBlanks(stem);
+      const rawLines = draft.answer.split(/\r?\n/).map((line) => line.replace(/^\s*\d+\s*/, '').trim());
+      const blankAnswers = count > 0 ? Array.from({ length: count }, (_, index) => rawLines[index] ?? '') : undefined;
+      next = { ...next, stem, blankAnswers, answer: blankAnswers ? formatBlankAnswers(blankAnswers) : draft.answer };
+    } else if (kind !== 'material') next = { ...next, blankAnswers: undefined };
+    editStruct(next);
+    setBankEditorOpen(false);
+  };
+
   return (
     <div
       className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3"
@@ -3221,7 +3327,9 @@ function ExampleEditor({
         <span className="text-sm font-medium text-gray-800">典型例题</span>
         <label className="relative inline-flex items-center">
           <span
-            className={`pointer-events-none inline-flex items-center h-7 pl-2.5 pr-6 rounded-md text-[13px] ${
+            className={`pointer-events-none inline-flex items-center h-7 rounded-md text-[13px] ${
+              contentEditing ? 'pl-2.5 pr-6' : 'px-2.5'
+            } ${
               example.kind
                 ? 'border border-teal-300 bg-teal-50 font-semibold text-teal-800'
                 : 'border border-gray-200 bg-white font-medium text-gray-400'
@@ -3229,11 +3337,14 @@ function ExampleEditor({
           >
             {exampleKindLabel(example.kind) || '请选择题型'}
           </span>
-          <ChevronDown
-            className={`pointer-events-none absolute right-1.5 w-3.5 h-3.5 ${
-              example.kind ? 'text-teal-700' : 'text-gray-400'
-            }`}
-          />
+          {contentEditing ? (
+            <ChevronDown
+              className={`pointer-events-none absolute right-1.5 w-3.5 h-3.5 ${
+                example.kind ? 'text-teal-700' : 'text-gray-400'
+              }`}
+            />
+          ) : null}
+          {contentEditing ? (
           <select
             value={example.kind ?? ''}
             onChange={(e) => changeKind(e.target.value)}
@@ -3249,9 +3360,26 @@ function ExampleEditor({
               </option>
             ))}
           </select>
+          ) : null}
         </label>
         <div className="ml-auto flex items-center gap-2">
-          {isEditing && canClear && (
+          {isEditing && editScheme === 'bank' && (
+            <span
+              className={isAnchorHost ? 'req-anchor-inline' : undefined}
+              {...(isAnchorHost ? { 'data-req-anchor': 'knowledge-tree.knowledge-card.bank-editor' } : {})}
+            >
+              <button
+                type="button"
+                aria-label="编辑"
+                title="编辑"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-teal-200 text-teal-600 hover:bg-teal-50"
+                onClick={() => setBankEditorOpen(true)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          )}
+          {contentEditing && canClear && (
             <DeleteIconButton hasContent label="该例题" onConfirm={onClear} />
           )}
           {isEditing && (
@@ -3272,7 +3400,7 @@ function ExampleEditor({
       <ExampleField
         label="题干"
         value={example.stem}
-        editing={isEditing}
+        editing={contentEditing}
         fieldId={stemFieldId || 'example-stem'}
         placeholder="不填写，学生端题干处显示【暂无】"
         anchor={isAnchorHost ? 'knowledge-tree.knowledge-card.example-stem' : undefined}
@@ -3286,7 +3414,7 @@ function ExampleEditor({
           isOptionKind(example.kind) ? (
             <ChoiceOptionsFields
               options={example.options}
-              editing={isEditing}
+              editing={contentEditing}
               imeHandlers={imeHandlers}
               onChange={(options, structural) => {
                 const next = { ...example, options };
@@ -3304,7 +3432,7 @@ function ExampleEditor({
             <div key={child.id} className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-gray-500">（{index + 1}）</span>
-                {isEditing ? (
+                {contentEditing ? (
                   <select
                     value={child.kind}
                     onChange={(e) => requestChildKind(child, e.target.value)}
@@ -3320,7 +3448,7 @@ function ExampleEditor({
                 ) : (
                   <span className="text-[11px] text-gray-400">{exampleKindLabel(child.kind)}</span>
                 )}
-                {isEditing && (
+                {contentEditing && (
                   <div className="ml-auto">
                     <DeleteIconButton
                       hasContent={subQuestionHasContent(child)}
@@ -3340,7 +3468,7 @@ function ExampleEditor({
               <ExampleField
                 label="题干"
                 value={child.stem}
-                editing={isEditing}
+                editing={contentEditing}
                 fieldId={`${child.id}-stem`}
                 placeholder="不填写，学生端题干处显示【暂无】"
                 imeHandlers={imeHandlers}
@@ -3353,7 +3481,7 @@ function ExampleEditor({
                   isOptionKind(child.kind) ? (
                     <ChoiceOptionsFields
                       options={child.options}
-                      editing={isEditing}
+                      editing={contentEditing}
                       imeHandlers={imeHandlers}
                       onChange={(options, structural) => updateChild(child.id, { options }, structural)}
                     />
@@ -3363,7 +3491,7 @@ function ExampleEditor({
               {child.kind === 'blank' && countBlanks(child.stem) > 0 ? (
                 <BlankAnswerFields
                   answers={child.blankAnswers ?? alignBlankAnswers(child.answer, undefined, countBlanks(child.stem))}
-                  editing={isEditing}
+                  editing={contentEditing}
                   onChange={(blankAnswers) =>
                     updateChild(child.id, { blankAnswers, answer: formatBlankAnswers(blankAnswers) })
                   }
@@ -3372,7 +3500,7 @@ function ExampleEditor({
               <ExampleField
                 label="答案"
                 value={child.answer}
-                editing={isEditing}
+                editing={contentEditing}
                 fieldId={`${child.id}-answer`}
                 placeholder="不填写，学生端答案处显示【暂无】"
                 anchor={isAnchorHost && index === 0 ? 'knowledge-tree.knowledge-card.steps-tips' : undefined}
@@ -3384,7 +3512,7 @@ function ExampleEditor({
               <ExampleField
                 label="解析"
                 value={child.analysis}
-                editing={isEditing}
+                editing={contentEditing}
                 fieldId={`${child.id}-analysis`}
                 placeholder="不填写，学生端解析处显示【暂无】"
                 anchor={isAnchorHost && index === 0 ? 'knowledge-tree.knowledge-card.add-step' : undefined}
@@ -3394,7 +3522,7 @@ function ExampleEditor({
               />
             </div>
           ))}
-          {isEditing && (
+          {contentEditing && (
             <AddActionButton
               compact
               tone="emerald"
@@ -3420,20 +3548,23 @@ function ExampleEditor({
               )}
             </AddActionButton>
           )}
+          {isAnchorHost && !contentEditing ? (
+            <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.add-exam-tip" />
+          ) : null}
         </div>
       ) : example.kind ? (
         <>
           {example.kind === 'blank' && countBlanks(example.stem) > 0 ? (
             <BlankAnswerFields
               answers={example.blankAnswers ?? alignBlankAnswers(example.answer, undefined, countBlanks(example.stem))}
-              editing={isEditing}
+              editing={contentEditing}
               onChange={(blankAnswers) => editText({ ...example, blankAnswers, answer: formatBlankAnswers(blankAnswers) })}
             />
           ) : (
           <ExampleField
             label="答案"
             value={example.answer}
-            editing={isEditing}
+            editing={contentEditing}
             fieldId={`${stemFieldId || 'example'}-answer`}
             placeholder="不填写，学生端答案处显示【暂无】"
             anchor={isAnchorHost ? 'knowledge-tree.knowledge-card.steps-tips' : undefined}
@@ -3445,7 +3576,7 @@ function ExampleEditor({
           <ExampleField
             label="解析"
             value={example.analysis}
-            editing={isEditing}
+            editing={contentEditing}
             fieldId={`${stemFieldId || 'example'}-analysis`}
             placeholder="不填写，学生端解析处显示【暂无】"
             anchor={isAnchorHost ? 'knowledge-tree.knowledge-card.add-step' : undefined}
@@ -3481,6 +3612,13 @@ function ExampleEditor({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <QuestionBankEditorDialog
+        open={bankEditorOpen}
+        draftKey={example.questionId || example.bankQuestionId || stemFieldId}
+        draft={bankEditorOpen ? exampleToBankDraft(example, knowledgePointName) : null}
+        onClose={() => setBankEditorOpen(false)}
+        onSave={saveBankEditor}
+      />
     </div>
   );
 }

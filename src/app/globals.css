@@ -865,6 +865,15 @@ html.prd-current-hidden .prd-scope-current {
   display: none !important;
 }
 
+/* 方案 B 的卡片默认不出现。打开「PRD 方案B」后只看方案 B，同时收起方案 A 的本次卡片。 */
+html:not(.is-prd-scheme-b) .prd-scope-scheme-b {
+  display: none !important;
+}
+
+html.is-prd-scheme-b .prd-scope-current {
+  display: none !important;
+}
+
 html.prd-baseline-hidden .prd-reader-shell.is-prd-baseline,
 html.prd-current-hidden .prd-reader-shell.is-prd-current {
   grid-template-columns: minmax(0, 1fr) !important;

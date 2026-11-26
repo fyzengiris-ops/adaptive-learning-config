@@ -3,6 +3,7 @@ import { knowledgeTreeInfoAcademicRequirementRegistry } from './knowledge-tree-i
 import { knowledgeTreeRelatedExamRegistry } from './knowledge-tree-related-exam.registry';
 import { knowledgeTreeLearningResourceKnowledgeCardRegistry } from './knowledge-tree-learning-resource-knowledge-card.registry';
 import { knowledgeTreeKnowledgeCardExampleDeltaRegistry } from './knowledge-tree-knowledge-card-example-delta.registry';
+import { knowledgeTreeKnowledgeCardExampleSchemeBRegistry } from './knowledge-tree-knowledge-card-example-scheme-b.registry';
 import { textbookTreeChapterTopicCourseRegistry } from './textbook-tree-chapter-topic-course.registry';
 import { textbookTreeChapterExtensionCourseRegistry } from './textbook-tree-chapter-extension-course.registry';
 import { textbookTreeTextbookCourseOverviewRegistry } from './textbook-tree-textbook-course-overview.registry';
@@ -23,6 +24,10 @@ export {
   knowledgeTreeKnowledgeCardExampleDeltaRegistry,
   KNOWLEDGE_CARD_EXAMPLE_DELTA_BATCH_ID,
 } from './knowledge-tree-knowledge-card-example-delta.registry';
+export {
+  knowledgeTreeKnowledgeCardExampleSchemeBRegistry,
+  KNOWLEDGE_CARD_EXAMPLE_SCHEME_B_BATCH_ID,
+} from './knowledge-tree-knowledge-card-example-scheme-b.registry';
 export { textbookTreeChapterTopicCourseRegistry } from './textbook-tree-chapter-topic-course.registry';
 export { textbookTreeChapterExtensionCourseRegistry } from './textbook-tree-chapter-extension-course.registry';
 export { textbookTreeTextbookCourseOverviewRegistry } from './textbook-tree-textbook-course-overview.registry';
@@ -51,6 +56,7 @@ const registries: RequirementRegistry[] = [
     knowledgeCardOverlay as RequirementLogicOverlay
   ),
   knowledgeTreeKnowledgeCardExampleDeltaRegistry,
+  knowledgeTreeKnowledgeCardExampleSchemeBRegistry,
   applyOverlay(
     textbookTreeChapterTopicCourseRegistry,
     textbookChapterTopicOverlay as RequirementLogicOverlay
