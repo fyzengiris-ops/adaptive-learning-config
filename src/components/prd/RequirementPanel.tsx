@@ -7,11 +7,12 @@ import {
   type RequirementItem,
 } from '@/data/requirements';
 import { loadNumberMapWithLegacyMerge, REQ_MARKER_NUMBERS_CHANGED } from '@/lib/requirementMarkerNumbers';
+import { readRequirementLogic, REQ_LOGIC_CHANGED, saveRequirementLogic } from '@/lib/requirementLogicEdits';
+import RequirementLogicEditor from '@/components/prd/RequirementLogicEditor';
 import {
   dispatchPrdActivate,
   dispatchPrdSelect,
   REQ_PRD_SELECT,
-  visibleLogicItems,
   type ReqPrdSelectDetail,
 } from '@/lib/requirementPrdEvents';
 
@@ -21,9 +22,13 @@ const DEFAULT_WIDTH = 360;
 export function PrdToggleButton({
   open,
   onClick,
+  label = 'PRD',
+  scopeClass,
 }: {
   open: boolean;
   onClick: () => void;
+  label?: string;
+  scopeClass?: string;
 }) {
   return (
     <button
@@ -33,11 +38,11 @@ export function PrdToggleButton({
         open
           ? 'bg-blue-600 text-white hover:bg-blue-700'
           : 'border border-blue-300 text-blue-700 hover:bg-blue-50'
-      }`}
+      }${scopeClass ? ` ${scopeClass}` : ''}`}
       aria-pressed={open}
     >
       <FileText className="w-4 h-4" />
-      PRD
+      {label}
     </button>
   );
 }
@@ -49,6 +54,7 @@ export default function RequirementPanel({
   width,
   onWidthChange,
   onClose,
+  batch = 'baseline',
   kicker = '需求列表',
   ariaLabel = 'PRD 阅读面板',
 }: {
@@ -58,10 +64,12 @@ export default function RequirementPanel({
   width: number;
   onWidthChange: (next: number) => void;
   onClose: () => void;
+  batch?: 'baseline' | 'current';
   kicker?: string;
   ariaLabel?: string;
 }) {
   const excluded = useMemo(() => new Set(excludeIds), [excludeIds]);
+  const [logicRevision, setLogicRevision] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [numberMap, setNumberMap] = useState<Record<string, number>>({});
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -72,11 +80,11 @@ export default function RequirementPanel({
       const registry = getRequirementRegistry(registryId);
       if (!registry) continue;
       for (const item of registry.requirements) {
-        if (!excluded.has(item.id)) list.push(item);
+        if (!excluded.has(item.id)) list.push(readRequirementLogic(registryId, item));
       }
     }
     return list;
-  }, [excluded, registryIds]);
+  }, [excluded, logicRevision, registryIds]);
 
   useEffect(() => {
     const load = () => {
@@ -89,7 +97,12 @@ export default function RequirementPanel({
       queueMicrotask(load);
     };
     window.addEventListener(REQ_MARKER_NUMBERS_CHANGED, onChanged);
-    return () => window.removeEventListener(REQ_MARKER_NUMBERS_CHANGED, onChanged);
+    const onLogic = () => setLogicRevision((revision) => revision + 1);
+    window.addEventListener(REQ_LOGIC_CHANGED, onLogic);
+    return () => {
+      window.removeEventListener(REQ_MARKER_NUMBERS_CHANGED, onChanged);
+      window.removeEventListener(REQ_LOGIC_CHANGED, onLogic);
+    };
   }, [registryIds, scopeId]);
 
   useEffect(() => {
@@ -102,13 +115,20 @@ export default function RequirementPanel({
   }, []);
 
   const sorted = useMemo(() => {
-    return [...requirements].sort((a, b) => {
+    const source = requirements.filter((item) =>
+      batch === 'current' ? Boolean(item.batchId) : !item.batchId
+    );
+    return [...source].sort((a, b) => {
       const na = numberMap[a.id] ?? Number.MAX_SAFE_INTEGER;
       const nb = numberMap[b.id] ?? Number.MAX_SAFE_INTEGER;
       if (na !== nb) return na - nb;
       return a.id.localeCompare(b.id);
     });
-  }, [numberMap, requirements]);
+  }, [batch, numberMap, requirements]);
+
+  useEffect(() => {
+    setSelectedId(null);
+  }, [batch]);
 
   const selected = sorted.find((item) => item.id === selectedId) ?? null;
 
@@ -134,7 +154,7 @@ export default function RequirementPanel({
 
   return (
     <aside
-      className="prd-panel"
+      className={`prd-panel ${batch === 'current' ? 'prd-scope-current' : 'prd-scope-baseline'}`}
       style={{ width: panelWidth }}
       aria-label={ariaLabel}
     >
@@ -157,8 +177,8 @@ export default function RequirementPanel({
       </div>
       <div className="prd-panel-body">
         <div className="prd-panel-list">
-          {sorted.map((item) => {
-            const no = numberMap[item.id];
+          {sorted.map((item, index) => {
+            const no = numberMap[item.id] ?? index + 1;
             const active = item.id === selectedId;
             return (
               <button
@@ -167,7 +187,7 @@ export default function RequirementPanel({
                 className={`prd-panel-item${active ? ' is-active' : ''}`}
                 onClick={() => onPick(item)}
               >
-                <span className="prd-panel-no">{no ?? '–'}</span>
+                <span className="prd-panel-no">{no}</span>
                 <span className="prd-panel-item-title">{item.title}</span>
               </button>
             );
@@ -179,31 +199,19 @@ export default function RequirementPanel({
           ) : (
             <>
               <div className="prd-panel-detail-id">
-                #{numberMap[selected.id] ?? '–'} · {selected.id}
+                #{numberMap[selected.id] ?? sorted.findIndex((item) => item.id === selected.id) + 1} · {selected.id}
               </div>
               <h3 className="prd-panel-detail-title">{selected.title}</h3>
-              {(selected.logicSections ?? [])
-                .map((section, sectionIdx) => {
-                  const items = visibleLogicItems(section.items);
-                  if (!section.title.trim() && items.length === 0) return null;
-                  return (
-                    <section key={`${section.title}-${sectionIdx}`} className="prd-panel-section">
-                      {section.title.trim() ? <h4>{section.title}</h4> : null}
-                      {items.length > 0 ? (
-                        <ol>
-                          {items.map((text, idx) => (
-                            <li key={`${sectionIdx}-${idx}`}>
-                              <span className="prd-panel-item-no">
-                                {sectionIdx + 1}.{idx + 1}
-                              </span>
-                              <span>{text}</span>
-                            </li>
-                          ))}
-                        </ol>
-                      ) : null}
-                    </section>
+              <RequirementLogicEditor
+                sections={selected.logicSections ?? []}
+                onChange={(logicSections) => {
+                  const registryId = registryIds.find((id) =>
+                    getRequirementRegistry(id)?.requirements.some((item) => item.id === selected.id)
                   );
-                })}
+                  if (!registryId) return;
+                  void saveRequirementLogic(registryId, { ...selected, logicSections });
+                }}
+              />
             </>
           )}
         </div>

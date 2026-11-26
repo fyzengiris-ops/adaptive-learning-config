@@ -171,7 +171,7 @@ export default function PrdTooltip({ data, iconSize = 14, className = '' }: PrdT
     <>
       <span
         ref={iconRef}
-        className={`inline-flex items-center justify-center cursor-help ${className}`}
+        className={`prd-annotation inline-flex items-center justify-center cursor-help ${className}`}
         onMouseEnter={handleIconEnter}
         onMouseLeave={scheduleHide}
       >
@@ -201,7 +201,7 @@ export default function PrdTooltip({ data, iconSize = 14, className = '' }: PrdT
       {visible && position && typeof document !== 'undefined' && createPortal(
         <div
           ref={panelRef}
-          className="fixed z-[9999] bg-gray-800 text-white rounded-lg shadow-xl py-3 px-4 text-left"
+          className="prd-annotation fixed z-[9999] bg-gray-800 text-white rounded-lg shadow-xl py-3 px-4 text-left"
           style={{
             top: position.top,
             left: position.left,

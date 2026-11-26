@@ -6,6 +6,63 @@ export function legacyMarkerOrderKey(scopeId: string): string {
   return `req-marker-order:${scopeId || 'default'}`;
 }
 
+const RETIRED_MARKER_KEY = 'req-marker-retired:knowledge-tree-detail';
+
+function readRetiredMarkerNumbers(): number[] {
+  try {
+    const raw = localStorage.getItem(RETIRED_MARKER_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((value) => parseInt(String(value), 10))
+      .filter((n) => !isNaN(n) && n > 0);
+  } catch {
+    return [];
+  }
+}
+
+const WITHDRAWN_MARKER_IDS = ['KT_KC_EX-005', 'KT_KC_EX-002'];
+
+/**
+ * 已撤回的角标：内置例题、填空题挖空。
+ * 删掉旧编号，不再把这些序号发给其他需求。
+ */
+export function retireWithdrawnMarkerNumbers(scopeId: string): void {
+  if (scopeId !== 'knowledge-tree-detail') return;
+  const map = loadNumberMap(scopeId);
+  if (!map) return;
+  const retired = new Set(readRetiredMarkerNumbers());
+  const withdrawnNow = new Set<number>();
+  let changed = false;
+  WITHDRAWN_MARKER_IDS.forEach((id) => {
+    const withdrawnNo = parseInt(String(map[id]), 10);
+    if (map[id] == null) return;
+    if (!isNaN(withdrawnNo) && withdrawnNo > 0) {
+      retired.add(withdrawnNo);
+      withdrawnNow.add(withdrawnNo);
+    }
+    delete map[id];
+    changed = true;
+  });
+  if (retired.size === 0) return;
+  const currentNo = parseInt(String(map['KT_KC_EX-006']), 10);
+  // 只在这次刚撤下的序号上让路。已经保存过的序号，包括用户改成的号，刷新时不再改写。
+  if (map['KT_KC_EX-006'] == null || withdrawnNow.has(currentNo)) {
+    const max = Object.values(map).reduce((highest, value) => {
+      const n = parseInt(String(value), 10);
+      return !isNaN(n) && n > highest ? n : highest;
+    }, 0);
+    const burnedMax = Math.max(0, ...retired);
+    let candidate = Math.max(max, burnedMax) + 1;
+    while (retired.has(candidate)) candidate += 1;
+    map['KT_KC_EX-006'] = candidate;
+    changed = true;
+  }
+  if (!changed) return;
+  localStorage.setItem(RETIRED_MARKER_KEY, JSON.stringify([...retired]));
+  saveNumberMap(scopeId, map);
+}
+
 export function loadNumberMap(scopeId: string): Record<string, number> | null {
   try {
     const raw = localStorage.getItem(markerNumberStorageKey(scopeId));
@@ -39,6 +96,7 @@ export function loadNumberMapWithLegacyMerge(
   scopeId: string,
   legacyRegistryIds: string[] = []
 ): Record<string, number> | null {
+  retireWithdrawnMarkerNumbers(scopeId);
   const direct = loadNumberMap(scopeId);
   if (direct) return direct;
 
@@ -108,9 +166,22 @@ export function persistNewAssignments(
   return resolveNumberMap(Object.keys(assigned), merged);
 }
 
+/** 用户把序号改到某个已作废的号上时，这个号重新可用，刷新后按用户改的号保留。 */
+export function releaseRetiredMarkerNumber(scopeId: string, number: number): void {
+  if (scopeId !== 'knowledge-tree-detail') return;
+  const parsed = parseInt(String(number), 10);
+  if (isNaN(parsed) || parsed <= 0) return;
+  const retired = readRetiredMarkerNumbers().filter((n) => n !== parsed);
+  try {
+    localStorage.setItem(RETIRED_MARKER_KEY, JSON.stringify(retired));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 /**
- * 合并已存序号与当前可挂载需求：保留用户序号，新增项接在最大号之后
- * @param reqIds 参与编号的需求 id 列表（建议为注册表全部 id，避免只保存可见锚点）
+ * 合并已存序号与当前可挂载需求：保留用户序号，新增项接在最大号之后。
+ * 已作废的号只用来避免自动补号时再发一遍；用户已经保存的号优先。
  */
 export function resolveNumberMap(
   mountedReqIds: string[],
@@ -128,6 +199,10 @@ export function resolveNumberMap(
       used[n] = true;
       if (n > maxNo) maxNo = n;
     }
+  });
+
+  readRetiredMarkerNumbers().forEach((n) => {
+    if (!used[n]) used[n] = true;
   });
 
   mountedReqIds.forEach((id) => {

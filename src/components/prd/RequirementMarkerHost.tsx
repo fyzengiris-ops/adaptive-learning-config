@@ -9,6 +9,7 @@ import {
 } from '@/data/requirements';
 import {
   applyDisplayNoChange,
+  releaseRetiredMarkerNumber,
   loadNumberMap,
   loadNumberMapWithLegacyMerge,
   persistNewAssignments,
@@ -141,11 +142,15 @@ function MarkerPositionLayer({
   host,
   offset,
   dragging,
+  scopeClass,
+  nudge = 0,
   children,
 }: {
   host: HTMLElement;
   offset?: MarkerOffset;
   dragging?: boolean;
+  scopeClass: string;
+  nudge?: number;
   children: React.ReactNode;
 }) {
   const inline = isInlineAnchorHost(host);
@@ -179,13 +184,15 @@ function MarkerPositionLayer({
 
   const displayed = applyOffset(point, offset);
   const visible = Boolean(dragging) || hostVisible;
+  const left = displayed.left - nudge * 22;
+  const top = displayed.top - nudge * 18;
 
   return createPortal(
     <span
-      className={`req-marker-positioner${inline ? ' is-inline' : ' is-block'}${visible ? '' : ' is-clipped'}${dragging ? ' is-dragging' : ''}`}
+      className={`req-marker-positioner ${scopeClass}${inline ? ' is-inline' : ' is-block'}${visible ? '' : ' is-clipped'}${dragging ? ' is-dragging' : ''}`}
       style={{
-        left: displayed.left,
-        top: displayed.top,
+        left: left,
+        top: top,
         zIndex,
         visibility: visible ? 'visible' : 'hidden',
         pointerEvents: visible ? undefined : 'none',
@@ -329,6 +336,7 @@ function ReqMarkerButton({
     const ids = orderedIds.length > 0 ? orderedIds : Object.keys(base);
     const unique = resolveNumberMap(ids, base);
     const next = applyDisplayNoChange(unique, requirement.id, value);
+    releaseRetiredMarkerNumber(scopeId, value);
     saveNumberMap(scopeId, next);
     onNumberMapChange(next);
   };
@@ -488,9 +496,7 @@ function ReqMarkerButton({
             }
           }}
           onBlur={() => {
-            window.setTimeout(() => {
-              exitEdit(true);
-            }, 0);
+            exitEdit(true);
           }}
           onChange={(e) => {
             e.stopPropagation();
@@ -746,12 +752,20 @@ export default function RequirementMarkerHost({
 
   return (
     <>
-      {mounted.map(({ requirement, host, displayNo }) => (
+      {mounted.map(({ requirement, host, displayNo }, index) => {
+        const nudge = requirement.batchId
+          ? mounted.slice(0, index).filter(
+              (item) => item.requirement.batchId && item.requirement.anchorId === requirement.anchorId
+            ).length + 1
+          : 0;
+        return (
         <MarkerPositionLayer
           key={requirement.id}
           host={host}
           offset={offsets[requirement.id]}
           dragging={draggingId === requirement.id}
+          scopeClass={requirement.batchId ? 'prd-scope-current' : 'prd-scope-baseline'}
+          nudge={nudge}
         >
           <ReqMarkerButton
             requirement={requirement}
@@ -788,7 +802,8 @@ export default function RequirementMarkerHost({
             onDraggingChange={(next) => setDraggingId(next ? requirement.id : null)}
           />
         </MarkerPositionLayer>
-      ))}
+        );
+      })}
       {active && (
         <RequirementFloatingCard
           requirement={active.requirement}

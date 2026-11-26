@@ -81,6 +81,7 @@ import KnowledgeCardPanel, {
   type KnowledgeCardPrdCommand,
   type RelatedExamPoint,
   sampleKnowledgeCard,
+  inverseProportionKnowledgeCard,
   emptyKnowledgeCard,
   EXAM_POINT_TYPES,
   examTypeMeta,
@@ -91,11 +92,13 @@ import KnowledgeCardPanel, {
 } from '@/components/shared/KnowledgeCardPanel';
 import RequirementMarkerHost from '@/components/prd/RequirementMarkerHost';
 import RequirementPanel, { PrdToggleButton } from '@/components/prd/RequirementPanel';
+import { revealPrdScope } from '@/components/prd/PrdVisibilityToggle';
 import {
   KNOWLEDGE_TREE_DETAIL_EXCLUDE_IDS,
   KNOWLEDGE_TREE_DETAIL_REGISTRY_IDS,
   KNOWLEDGE_TREE_DETAIL_SCOPE_ID,
 } from '@/data/requirements/knowledgeTreeDetailMarkers';
+import { knowledgeTreeKnowledgeCardExampleDeltaRegistry } from '@/data/requirements/knowledge-tree-knowledge-card-example-delta.registry';
 import {
   highlightReqAnchor,
   REQ_PRD_ACTIVATE,
@@ -855,6 +858,18 @@ const mockKnowledgeTree: KnowledgeNode[] = [
         strategyType: 'general',
         prerequisiteKnowledge: [],
         extensionKnowledge: [],
+        relatedExamPoints: [
+          { id: 'ep-inverse-1', name: '反比例函数描述数量关系', examType: 'basic' },
+          { id: 'ep-inverse-2', name: '反比例函数的判断', examType: 'basic' },
+          { id: 'ep-inverse-3', name: '根据反比例函数定义求参数', examType: 'basic' },
+          { id: 'ep-inverse-4', name: '反比例函数值的计算', examType: 'advanced' },
+          { id: 'ep-inverse-5', name: '已知反比例函数值求自变量', examType: 'advanced' },
+          { id: 'ep-inverse-6', name: '待定系数法求反比例函数解析式', examType: 'advanced' },
+          { id: 'ep-inverse-7', name: '反比例函数图象的判断与作图', examType: 'sprint' },
+          { id: 'ep-inverse-8', name: '已知反比例函数图象判断解析式', examType: 'sprint' },
+          { id: 'ep-inverse-9', name: '根据反比例函数图象对称性求点坐标', examType: 'sprint' },
+        ],
+        knowledgeCard: inverseProportionKnowledgeCard(),
       },
       {
         id: '1-0-1',
@@ -2824,28 +2839,127 @@ function DeleteConfirmModal({
   );
 }
 
+const STAGE_PHASE: Record<string, PhaseType> = {
+  高中: 'senior',
+  初中: 'junior',
+  小学: 'primary',
+};
+const PHASE_STAGE: Record<PhaseType, string> = {
+  senior: '高中',
+  junior: '初中',
+  primary: '小学',
+};
+const DETAIL_TABS: DetailTabType[] = ['info', 'relatedExam', 'structure', 'resource'];
+
+function findKnowledgeNode(nodes: KnowledgeNode[], id: string): KnowledgeNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    if (node.children) {
+      const found = findKnowledgeNode(node.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function expandToKnowledgeNode(nodes: KnowledgeNode[], id: string): KnowledgeNode[] {
+  return nodes.map((node) => {
+    if (node.id === id || !node.children?.length) return node;
+    if (!findKnowledgeNode(node.children, id)) return node;
+    return { ...node, expanded: true, children: expandToKnowledgeNode(node.children, id) };
+  });
+}
+
+function snapshotDetailEdit(node: KnowledgeNode): Partial<KnowledgeNode> {
+  const knowledgeCard = node.knowledgeCard
+    ? structuredClone(node.knowledgeCard)
+    : emptyKnowledgeCard();
+  return {
+    academicRequirement: node.academicRequirement,
+    examFrequency: node.examFrequency,
+    strategyType: node.strategyType,
+    personalizedStrategies: node.personalizedStrategies || [],
+    prerequisiteKnowledge: node.prerequisiteKnowledge || [],
+    extensionKnowledge: node.extensionKnowledge || [],
+    videoContents: node.videoContents || [],
+    textContent: node.textContent,
+    relatedExamPoints: structuredClone(node.relatedExamPoints || []),
+    knowledgeCard,
+  };
+}
+
+export interface KnowledgeTreeLocation {
+  stage: string | null;
+  phase: string | null;
+  subjectId: string | null;
+  nodeId: string | null;
+  detailTab: string | null;
+  editing: boolean;
+  card: string | null;
+  openExamIds: string[];
+}
+
+function restoreTreeLocation(location: KnowledgeTreeLocation) {
+  const phase: PhaseType =
+    location.phase === 'primary' || location.phase === 'junior' || location.phase === 'senior'
+      ? location.phase
+      : STAGE_PHASE[location.stage || ''] || 'junior';
+  const stage = location.stage || PHASE_STAGE[phase];
+  const subject = (mockSubjects[phase] || []).find((item) => item.id === location.subjectId) ?? null;
+  const node = subject && location.nodeId ? findKnowledgeNode(mockKnowledgeTree, location.nodeId) : null;
+  const detailTab = DETAIL_TABS.includes(location.detailTab as DetailTabType)
+    ? (location.detailTab as DetailTabType)
+    : 'info';
+  const editing = !!(location.editing && subject && node);
+  return {
+    stage,
+    phase,
+    subject,
+    node,
+    detailTab: subject ? detailTab : ('info' as DetailTabType),
+    editing,
+    editData: editing && node ? snapshotDetailEdit(node) : {},
+    card: (location.card === 'exam' ? 'exam' : 'concept') as 'concept' | 'exam',
+    openExamIds: node ? location.openExamIds : [],
+    tree: node ? expandToKnowledgeNode(mockKnowledgeTree, node.id) : mockKnowledgeTree,
+  };
+}
+
 // 组件 Props 接口
 interface KnowledgeTreeProps {
   onDetailViewChange?: (
     isDetailView: boolean,
     extra?: { treeTitle?: string }
   ) => void;
+  location: KnowledgeTreeLocation;
+  onLocationChange: (next: {
+    stage: string;
+    phase: string;
+    subject: string | null;
+    node: string | null;
+    detail: string | null;
+    editing: string | null;
+    card: string | null;
+    open: string | null;
+  }) => void;
 }
 
-export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps) {
+export default function KnowledgeTree({ onDetailViewChange, location, onLocationChange }: KnowledgeTreeProps) {
   const { isTeacher } = useRole();
+  const restoredRef = useRef(restoreTreeLocation(location));
+  const restored = restoredRef.current;
   
-  // 学科名称状态（默认选中初中）
-  const [selectedSubjectName, setSelectedSubjectName] = useState<SubjectName>('初中');
+  // 学科名称状态（刷新后回到上次的学段）
+  const [selectedSubjectName, setSelectedSubjectName] = useState<SubjectName>(restored.stage);
   
   // 原有状态
-  const [selectedPhase, setSelectedPhase] = useState<PhaseType>('junior');
-  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
-  const [selectedNode, setSelectedNode] = useState<KnowledgeNode | null>(null);
+  const [selectedPhase, setSelectedPhase] = useState<PhaseType>(restored.phase);
+  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(restored.subject);
+  const [selectedNode, setSelectedNode] = useState<KnowledgeNode | null>(restored.node);
   const [tempEditNode, setTempEditNode] = useState<KnowledgeNode | null>(null); // 临时编辑的节点（用于编辑其他知识点的前置知识点）
   const [externalKnowledgeNodes, setExternalKnowledgeNodes] = useState<Map<string, KnowledgeNode>>(new Map()); // 不在知识树中的关联知识点
-  const [editData, setEditData] = useState<Partial<KnowledgeNode>>({});
-  const knowledgeCardDraftRef = useRef<KnowledgeCard | undefined>(undefined);
+  const [editData, setEditData] = useState<Partial<KnowledgeNode>>(restored.editData);
+  const knowledgeCardDraftRef = useRef<KnowledgeCard | undefined>(restored.editData.knowledgeCard);
   const handleKnowledgeCardChange = useCallback((knowledgeCard: KnowledgeCard) => {
     // 只写入 ref，避免知识卡片每次输入/点击都重渲染整页导致滚动乱跳
     knowledgeCardDraftRef.current = knowledgeCard;
@@ -2856,7 +2970,7 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
   const [showStrategySearch, setShowStrategySearch] = useState(false);
   const [showKnowledgeSelector, setShowKnowledgeSelector] = useState(false);
   const [selectorType, setSelectorType] = useState<'prerequisite' | 'extension'>('prerequisite');
-  const [knowledgeTree, setKnowledgeTree] = useState<KnowledgeNode[]>(mockKnowledgeTree);
+  const [knowledgeTree, setKnowledgeTree] = useState<KnowledgeNode[]>(restored.tree);
   const [graphUpdateKey, setGraphUpdateKey] = useState(0); // 用于强制刷新网状图
   const [searchKeyword, setSearchKeyword] = useState('');
   const [showAddSubjectDialog, setShowAddSubjectDialog] = useState(false);
@@ -2910,8 +3024,15 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
   const [showCancelEditConfirm, setShowCancelEditConfirm] = useState(false); // 取消编辑确认弹窗
   
   // 知识点详情编辑模式状态
-  const [isEditingDetail, setIsEditingDetail] = useState(false);
-  const [prdOpen, setPrdOpen] = useState(false);
+  const [isEditingDetail, setIsEditingDetail] = useState(restored.editing);
+  const [prdView, setPrdView] = useState<'baseline' | 'current' | null>(null);
+  const prdOpen = prdView !== null;
+  const openPrd = (view: 'baseline' | 'current') => {
+    const hiddenClass = view === 'baseline' ? 'prd-baseline-hidden' : 'prd-current-hidden';
+    const hidden = document.documentElement.classList.contains(hiddenClass);
+    revealPrdScope(view);
+    setPrdView((prev) => (hidden || prev !== view ? view : null));
+  };
   const [prdWidth, setPrdWidth] = useState(360);
   const [kcPrdCommand, setKcPrdCommand] = useState<KnowledgeCardPrdCommand | null>(null);
   
@@ -2971,7 +3092,49 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
   }, [selectedSubjectName]);
   
   // 详情页 Tab 切换状态
-  const [activeDetailTab, setActiveDetailTab] = useState<DetailTabType>('info');
+  const [activeDetailTab, setActiveDetailTab] = useState<DetailTabType>(restored.detailTab);
+  const [cardView, setCardView] = useState<{
+    nodeId: string;
+    subTab: 'concept' | 'exam';
+    openExamIds: string[];
+  }>({
+    nodeId: restored.node?.id ?? '',
+    subTab: restored.card,
+    openExamIds: restored.openExamIds,
+  });
+
+  useEffect(() => {
+    onLocationChange({
+      stage: selectedSubjectName,
+      phase: STAGE_PHASE[selectedSubjectName] || selectedPhase,
+      subject: selectedSubject?.id ?? null,
+      node: selectedSubject && selectedNode ? selectedNode.id : null,
+      detail: selectedSubject ? activeDetailTab : null,
+      editing: selectedSubject && isEditingDetail ? '1' : null,
+      card: selectedSubject && selectedNode ? cardView.subTab : null,
+      open: selectedSubject && selectedNode && cardView.openExamIds.length
+        ? cardView.openExamIds.join(',')
+        : null,
+    });
+  }, [
+    selectedSubjectName,
+    selectedPhase,
+    selectedSubject,
+    selectedNode,
+    activeDetailTab,
+    isEditingDetail,
+    cardView,
+    onLocationChange,
+  ]);
+
+  useEffect(() => {
+    if (!restored.node) return;
+    const id = restored.node.id;
+    const timer = window.setTimeout(() => {
+      document.querySelector(`[data-node-id="${id}"]`)?.scrollIntoView({ block: 'center' });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [restored.node]);
   const [pendingDeleteRelatedExam, setPendingDeleteRelatedExam] = useState<{
     id: string;
     name: string;
@@ -4502,23 +4665,10 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
   // 开始编辑
   const handleEdit = () => {
     if (!selectedNode) return;
+    const next = snapshotDetailEdit(selectedNode);
+    knowledgeCardDraftRef.current = next.knowledgeCard;
     setIsEditingDetail(true);
-    const knowledgeCard = selectedNode.knowledgeCard
-      ? structuredClone(selectedNode.knowledgeCard)
-      : emptyKnowledgeCard();
-    knowledgeCardDraftRef.current = knowledgeCard;
-    setEditData({
-      academicRequirement: selectedNode.academicRequirement,
-      examFrequency: selectedNode.examFrequency,
-      strategyType: selectedNode.strategyType,
-      personalizedStrategies: selectedNode.personalizedStrategies || [],
-      prerequisiteKnowledge: selectedNode.prerequisiteKnowledge || [],
-      extensionKnowledge: selectedNode.extensionKnowledge || [],
-      videoContents: selectedNode.videoContents || [],
-      textContent: selectedNode.textContent,
-      relatedExamPoints: structuredClone(selectedNode.relatedExamPoints || []),
-      knowledgeCard,
-    });
+    setEditData(next);
   };
 
   // 取消编辑
@@ -5059,6 +5209,7 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
               isSelected ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700 hover:bg-gray-50'
             }`}
             style={{ paddingLeft: `${paddingLeft}px` }}
+            data-node-id={node.id}
             onClick={() => !isEditingThis && selectNode(node)}
           >
             {/* 编辑模式下显示拖拽手柄 - 教研员身份下不显示 */}
@@ -5483,7 +5634,17 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <PrdToggleButton open={prdOpen} onClick={() => setPrdOpen((open) => !open)} />
+          <PrdToggleButton
+            open={prdView === 'baseline'}
+            label="PRD 已有"
+            scopeClass="prd-scope-baseline"
+            onClick={() => openPrd('baseline')}
+          />
+          <PrdToggleButton
+            open={prdView === 'current'}
+            label="PRD 本次"
+            onClick={() => openPrd('current')}
+          />
           {!isTeacher && (
             <>
             <button
@@ -6735,6 +6896,22 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
                       nodeId={selectedNode.id}
                       isEditing={isEditingDetail}
                       prdCommand={kcPrdCommand}
+                      restoreNodeId={cardView.nodeId}
+                      restoreSubTab={cardView.subTab}
+                      restoreExpandedExamIds={cardView.openExamIds}
+                      onViewChange={(subTab, openExamIds) => {
+                        const nodeId = selectedNode.id;
+                        setCardView((prev) => {
+                          if (
+                            prev.nodeId === nodeId &&
+                            prev.subTab === subTab &&
+                            prev.openExamIds.join(',') === openExamIds.join(',')
+                          ) {
+                            return prev;
+                          }
+                          return { nodeId, subTab, openExamIds };
+                        });
+                      }}
                       previewTitle={selectedNode.name}
                       previewAcademicRequirementLabel={
                         (isEditingDetail
@@ -7209,7 +7386,7 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
 
   return (
     <div
-      className={`prd-reader-shell${prdOpen ? ' is-prd-open' : ''}${selectedSubject ? ' h-full min-h-0' : ''}`}
+      className={`prd-reader-shell${prdOpen ? ` is-prd-open is-prd-${prdView}` : ''}${selectedSubject ? ' h-full min-h-0' : ''}`}
       style={{
         gridTemplateColumns: prdOpen ? `minmax(0, 1fr) ${prdWidth}px` : 'minmax(0, 1fr)',
         ['--prd-panel-width' as string]: `${prdWidth}px`,
@@ -7241,7 +7418,17 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
               ))}
             </div>
             <div className="flex items-center gap-2">
-              <PrdToggleButton open={prdOpen} onClick={() => setPrdOpen((open) => !open)} />
+              <PrdToggleButton
+                open={prdView === 'baseline'}
+                label="PRD 已有"
+                scopeClass="prd-scope-baseline"
+                onClick={() => openPrd('baseline')}
+              />
+              <PrdToggleButton
+                open={prdView === 'current'}
+                label="PRD 本次"
+                onClick={() => openPrd('current')}
+              />
               <button
               onClick={() => setShowAggregateHistory(true)}
               className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
@@ -8198,7 +8385,10 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
       {/* Skill3：知识点信息、关联考点、知识卡片；顶栏导出/保存/批量导入已挂。KT_KC-018 与保存顶栏合并；KT_RE-013 已并入 KT_INFO_AR-009，不挂第二枚。 */}
       <RequirementMarkerHost
         scopeId={KNOWLEDGE_TREE_DETAIL_SCOPE_ID}
-        registryIds={[...KNOWLEDGE_TREE_DETAIL_REGISTRY_IDS]}
+        registryIds={[
+          ...KNOWLEDGE_TREE_DETAIL_REGISTRY_IDS,
+          knowledgeTreeKnowledgeCardExampleDeltaRegistry.registryId,
+        ]}
         excludeIds={[...KNOWLEDGE_TREE_DETAIL_EXCLUDE_IDS]}
         refreshKey={`${isEditingDetail}-${showImportDialog}-${importValidationStatus}-${selectedNode?.id ?? ''}-${activeDetailTab}-${pendingDeleteRelatedExam?.id ?? ''}-${showAddChildConfirm}-${kcPrdCommand?.seq ?? 0}-${(isEditingDetail ? editData.relatedExamPoints : selectedNode?.relatedExamPoints)?.length ?? 0}`}
       />
@@ -8210,16 +8400,20 @@ export default function KnowledgeTree({ onDetailViewChange }: KnowledgeTreeProps
         </div>
       )}
       </div>
-      {prdOpen ? (
+      {prdView ? (
         <RequirementPanel
           scopeId={KNOWLEDGE_TREE_DETAIL_SCOPE_ID}
-          registryIds={KNOWLEDGE_TREE_DETAIL_REGISTRY_IDS}
+          registryIds={[
+            ...KNOWLEDGE_TREE_DETAIL_REGISTRY_IDS,
+            knowledgeTreeKnowledgeCardExampleDeltaRegistry.registryId,
+          ]}
           excludeIds={KNOWLEDGE_TREE_DETAIL_EXCLUDE_IDS}
           width={prdWidth}
           onWidthChange={setPrdWidth}
-          onClose={() => setPrdOpen(false)}
-          kicker="末级知识点 · 详情"
-          ariaLabel="通用知识树 PRD 阅读面板"
+          onClose={() => setPrdView(null)}
+          batch={prdView}
+          kicker={prdView === 'current' ? '本次新增' : '已有业务逻辑'}
+          ariaLabel={prdView === 'current' ? '本次新增 PRD' : '已有 PRD'}
         />
       ) : null}
     </div>

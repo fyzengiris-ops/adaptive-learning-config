@@ -9,6 +9,8 @@ const REGISTRY_FILES: Record<string, string> = {
     'src/data/requirements/knowledge-tree-info-academic-requirement.registry.ts',
   'knowledge-tree-learning-resource-knowledge-card':
     'src/data/requirements/knowledge-tree-learning-resource-knowledge-card.registry.ts',
+  'knowledge-tree-knowledge-card-example-delta':
+    'src/data/requirements/knowledge-tree-knowledge-card-example-delta.registry.ts',
 };
 
 function overlayPath(registryId: string): string {

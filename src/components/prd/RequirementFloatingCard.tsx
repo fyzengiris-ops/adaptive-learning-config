@@ -3,13 +3,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { RequirementItem } from '@/data/requirements/schema';
-import { getRequirementRegistry } from '@/data/requirements';
-import {
-  cloneLogicSections,
-  loadLogicOverlay,
-  logicFingerprint,
-  saveLogicOverlay,
-} from '@/lib/requirementLogicEdits';
+import { saveRequirementLogic } from '@/lib/requirementLogicEdits';
+import RequirementLogicEditor, { REQUIREMENT_LOGIC_EDITING } from '@/components/prd/RequirementLogicEditor';
 
 function EditableText({
   value,
@@ -117,52 +112,6 @@ function EditableText({
   );
 }
 
-function LogicItemRow({
-  no,
-  value,
-  onCommit,
-  onRemove,
-}: {
-  no: string;
-  value: string;
-  onCommit: (next: string) => void;
-  onRemove: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-
-  return (
-    <li className="req-float-item">
-      <span className="req-float-item-no">{no}</span>
-      <EditableText
-        className="req-float-item-text"
-        multiline
-        allowEmpty
-        value={value}
-        onEditingChange={setEditing}
-        onCommit={onCommit}
-      />
-      {editing && (
-        <button
-          type="button"
-          className="req-float-item-remove"
-          aria-label="删除这条"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onRemove();
-          }}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-        >
-          ×
-        </button>
-      )}
-    </li>
-  );
-}
-
 export default function RequirementFloatingCard({
   requirement,
   registryId,
@@ -198,35 +147,10 @@ export default function RequirementFloatingCard({
   }, [anchorEl, requirement.id]);
 
   const persist = async (next: RequirementItem) => {
-    const bundled = getRequirementRegistry(registryId)?.requirements.find(
-      (item) => item.id === next.id
-    );
-    const overlay = loadLogicOverlay(registryId);
-    overlay[next.id] = {
-      title: next.title,
-      logicSections: cloneLogicSections(next.logicSections),
-      baseFingerprint: bundled
-        ? logicFingerprint(bundled.title, bundled.logicSections)
-        : undefined,
-    };
-    saveLogicOverlay(registryId, overlay);
     onRequirementChange(next);
     setSaveState('saving');
-    try {
-      const res = await fetch('/api/requirements/logic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          registryId,
-          requirementId: next.id,
-          title: next.title,
-          logicSections: next.logicSections,
-        }),
-      });
-      setSaveState(res.ok ? 'saved' : 'local');
-    } catch {
-      setSaveState('local');
-    }
+    const result = await saveRequirementLogic(registryId, next);
+    setSaveState(result);
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -257,7 +181,7 @@ export default function RequirementFloatingCard({
   return createPortal(
     <div
       ref={cardRef}
-      className="req-float-card"
+      className={`req-float-card ${requirement.batchId ? 'prd-scope-current' : 'prd-scope-baseline'}`}
       style={{ left: pos.left, top: pos.top }}
       role="dialog"
       aria-label={`需求 ${displayNo}：${requirement.title}`}
@@ -274,71 +198,25 @@ export default function RequirementFloatingCard({
           <div className="req-float-id">
             #{displayNo} · {requirement.id}
           </div>
-          <EditableText
-            className="req-float-title"
-            value={requirement.title}
-            onCommit={(title) => persist({ ...requirement, title })}
-          />
+          {REQUIREMENT_LOGIC_EDITING ? (
+            <EditableText
+              className="req-float-title"
+              value={requirement.title}
+              onCommit={(title) => persist({ ...requirement, title })}
+            />
+          ) : (
+            <div className="req-float-title">{requirement.title}</div>
+          )}
         </div>
         <button type="button" className="req-float-close" aria-label="关闭" onClick={onClose}>
           ×
         </button>
       </div>
       <div className="req-float-body">
-        {sections.length === 0 ? (
-          <p className="req-float-empty">暂无业务逻辑说明</p>
-        ) : (
-          sections.map((section, sectionIdx) => (
-            <section key={`${section.title}-${sectionIdx}`} className="req-float-section">
-              <h4>
-                <EditableText
-                  value={section.title}
-                  onCommit={(title) => {
-                    const logicSections = cloneLogicSections(requirement.logicSections);
-                    logicSections[sectionIdx] = { ...logicSections[sectionIdx], title };
-                    persist({ ...requirement, logicSections });
-                  }}
-                />
-              </h4>
-              <ol className="req-float-list">
-                {section.items.map((item, idx) => (
-                  <LogicItemRow
-                    key={`${sectionIdx}-${idx}-${item}`}
-                    no={`${sectionIdx + 1}.${idx + 1}`}
-                    value={item}
-                    onCommit={(text) => {
-                      const logicSections = cloneLogicSections(requirement.logicSections);
-                      if (!text) {
-                        const items = logicSections[sectionIdx].items.filter(
-                          (_, itemIdx) => itemIdx !== idx
-                        );
-                        if (items.length === 0) logicSections.splice(sectionIdx, 1);
-                        else logicSections[sectionIdx] = { ...logicSections[sectionIdx], items };
-                      } else {
-                        logicSections[sectionIdx] = {
-                          ...logicSections[sectionIdx],
-                          items: logicSections[sectionIdx].items.map((current, itemIdx) =>
-                            itemIdx === idx ? text : current
-                          ),
-                        };
-                      }
-                      persist({ ...requirement, logicSections });
-                    }}
-                    onRemove={() => {
-                      const logicSections = cloneLogicSections(requirement.logicSections);
-                      const items = logicSections[sectionIdx].items.filter(
-                        (_, itemIdx) => itemIdx !== idx
-                      );
-                      if (items.length === 0) logicSections.splice(sectionIdx, 1);
-                      else logicSections[sectionIdx] = { ...logicSections[sectionIdx], items };
-                      persist({ ...requirement, logicSections });
-                    }}
-                  />
-                ))}
-              </ol>
-            </section>
-          ))
-        )}
+        <RequirementLogicEditor
+          sections={sections}
+          onChange={(logicSections) => persist({ ...requirement, logicSections })}
+        />
       </div>
       <div className="req-float-foot">
         {saveState === 'saving' && <span>保存中…</span>}

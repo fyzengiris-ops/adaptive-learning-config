@@ -13,8 +13,85 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  MaterialChildTypeSchemeSwitch,
+  materialChildTypeText,
+  useMaterialChildTypeScheme,
+} from '@/components/shared/materialChildTypeScheme';
+
+const CIRCLED_NUMBERS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+const BLANK_PATTERN = /____([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]|\d+)____/g;
+
+function circledNumber(index: number) {
+  const n = index + 1;
+  return n <= CIRCLED_NUMBERS.length ? CIRCLED_NUMBERS[n - 1] : String(n);
+}
+
+function countBlanks(text: string) {
+  return text.match(new RegExp(BLANK_PATTERN.source, 'g'))?.length ?? 0;
+}
+
+function BlankLine({ label }: { label: string }) {
+  return (
+    <span className="inline-flex flex-col items-stretch align-baseline leading-none">
+      <span>
+        <span className="text-transparent">____</span>
+        {label}
+        <span className="text-transparent">____</span>
+      </span>
+      <span aria-hidden className="mt-1 h-px w-full bg-gray-800" />
+    </span>
+  );
+}
+
+function BlankText({ text }: { text: string }) {
+  const pattern = new RegExp(BLANK_PATTERN.source, 'g');
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = pattern.exec(text))) {
+    if (match.index > last) nodes.push(text.slice(last, match.index));
+    nodes.push(<BlankLine key={key++} label={match[1]} />);
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return <>{nodes}</>;
+}
+
+function blankAnswerLines(answer: string, count: number) {
+  const lines = answer
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  return Array.from({ length: count }, (_, index) => lines[index] ?? '');
+}
+
+function BlankAnswerReadout({ answer, count }: { answer: string; count: number }) {
+  const lines = blankAnswerLines(answer, count);
+  return (
+    <div className="space-y-2">
+      {lines.map((item, index) => (
+        <div key={circledNumber(index)} className="flex items-start gap-2">
+          <span className="mt-1 w-5 shrink-0 text-center text-sm leading-6 text-gray-500">{circledNumber(index)}</span>
+          <span className="min-h-6 flex-1 border-b border-gray-200 py-1 text-sm leading-relaxed text-gray-700">
+            {item.trim() ? item : '暂无'}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export type BankSource = 'leke' | 'third_party';
+
+export interface BankSubQuestion {
+  id: string;
+  questionType: string;
+  stem: string;
+  answer: string;
+  analysis: string;
+}
 
 export interface BankQuestion {
   id: string;
@@ -31,6 +108,8 @@ export interface BankQuestion {
   purposeSub?: string;
   steps: Array<{ title: string; detail: string }>;
   tips: string[];
+  /** 材料题子题。子题题型只允许普通题，不能再套材料题。 */
+  children?: BankSubQuestion[];
 }
 
 export const MOCK_BANK_QUESTIONS: BankQuestion[] = [
@@ -193,7 +272,59 @@ export const MOCK_BANK_QUESTIONS: BankQuestion[] = [
     steps: [{ title: '对照定义', detail: '幂函数解析式为 y = x^α，系数必须为 1。' }],
     tips: ['有系数或加减项都不是幂函数'],
   },
+  {
+    id: 'leke-q7',
+    source: 'leke',
+    platformName: '乐课网',
+    stem: '阅读材料：反比例函数 y = k/x（k ≠ 0）的图象是双曲线。k > 0 时在第一、三象限，k < 0 时在第二、四象限。',
+    answer: '',
+    analysis: '',
+    questionType: '材料题',
+    difficulty: '一般',
+    category: '基础题',
+    level: '精品',
+    purpose: 'sync',
+    steps: [],
+    tips: [],
+    children: [
+      {
+        id: 'leke-q7-1',
+        questionType: '多选题',
+        stem: '当 k > 0 时，下列说法正确的有（ ）。\nA. 图象位于第一、三象限\nB. 图象关于原点对称\nC. 图象位于第二、四象限\nD. 图象与坐标轴相交',
+        answer: 'A、B',
+        analysis: 'k > 0 时，图象在第一、三象限，并且关于原点对称。它不在第二、四象限，也不与坐标轴相交。',
+      },
+      {
+        id: 'leke-q7-2',
+        questionType: '填空题',
+        stem: '若点 (2, 3) 在该函数图象上，则 k = ____①____；若点 (-1, 4) 在该函数图象上，则 k = ____②____。',
+        answer: '6\n-4',
+        analysis: 'k = xy。点 (2, 3) 时 k = 2 × 3 = 6；点 (-1, 4) 时 k = (-1) × 4 = -4。',
+      },
+    ],
+  },
 ];
+
+const QUESTION_TYPE_FILTERS = [
+  { id: 'all', label: '全部题型' },
+  { id: 'single', label: '单选题' },
+  { id: 'multiple', label: '多选题' },
+  { id: 'judge', label: '判断题' },
+  { id: 'blank', label: '填空题' },
+  { id: 'qa', label: '问答题' },
+  { id: 'material', label: '材料题' },
+];
+
+function matchesQuestionType(question: BankQuestion, filter: string) {
+  if (filter === 'all') return true;
+  const isMaterial = question.questionType.includes('材料') || (question.children?.length ?? 0) > 0;
+  if (isMaterial) return filter === 'material';
+  if (question.questionType.includes('多选')) return filter === 'multiple';
+  if (question.questionType.includes('单选') || question.questionType.includes('选择')) return filter === 'single';
+  if (question.questionType.includes('判断')) return filter === 'judge';
+  if (question.questionType.includes('填空')) return filter === 'blank';
+  return filter === 'qa';
+}
 
 interface LekeQuestionPickerProps {
   open: boolean;
@@ -209,14 +340,18 @@ export default function LekeQuestionPicker({
   onSelect,
 }: LekeQuestionPickerProps) {
   const [keyword, setKeyword] = useState('');
+  const childTypeScheme = useMaterialChildTypeScheme();
+  const [typeFilter, setTypeFilter] = useState('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pending, setPending] = useState<BankQuestion | null>(null);
 
   const list = useMemo(() => {
     const q = keyword.trim().toLowerCase();
-    if (!q) return MOCK_BANK_QUESTIONS;
-    return MOCK_BANK_QUESTIONS.filter((item) => item.stem.toLowerCase().includes(q));
-  }, [keyword]);
+    return MOCK_BANK_QUESTIONS.filter((item) => {
+      if (q && !item.stem.toLowerCase().includes(q)) return false;
+      return matchesQuestionType(item, typeFilter);
+    });
+  }, [keyword, typeFilter]);
 
   useEffect(() => {
     if (!open) return;
@@ -244,6 +379,7 @@ export default function LekeQuestionPicker({
 
   const handleClose = () => {
     setKeyword('');
+    setTypeFilter('all');
     setExpandedId(null);
     setPending(null);
     onClose();
@@ -255,7 +391,7 @@ export default function LekeQuestionPicker({
         data-req-surface="picker"
         className="fixed inset-0 z-[1100] bg-black/50 flex items-center justify-center p-5"
       >
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[88vh] overflow-hidden flex flex-col">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl h-[88vh] overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 bg-gray-50 shrink-0">
             <div className="flex items-center gap-2">
               <BookOpen className="w-5 h-5 text-emerald-600" />
@@ -267,6 +403,7 @@ export default function LekeQuestionPicker({
                   典型例题
                 </span>
               </h3>
+              <MaterialChildTypeSchemeSwitch />
             </div>
             <button
               type="button"
@@ -278,21 +415,38 @@ export default function LekeQuestionPicker({
           </div>
 
           <div className="px-5 pt-4 pb-3 shrink-0 space-y-3">
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                placeholder="搜索题干关键词"
-                className="w-full h-9 pl-9 pr-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  placeholder="搜索题干关键词"
+                  className="w-full h-9 pl-9 pr-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                aria-label="筛选题型"
+                className="h-9 w-32 shrink-0 px-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {QUESTION_TYPE_FILTERS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="text-xs text-gray-400">
               共 <span className="text-gray-600 font-medium">{list.length}</span> 题
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5 space-y-3">
+          <div
+            className="req-anchor-host flex-1 min-h-0 overflow-y-auto px-5 pb-5 space-y-3"
+            data-req-anchor="knowledge-tree.knowledge-card.picker-question"
+          >
             {list.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <Search className="w-10 h-10 mb-3 opacity-40" />
@@ -316,9 +470,22 @@ export default function LekeQuestionPicker({
                       onClick={() => setExpandedId(expanded ? null : q.id)}
                     >
                       <div className="flex items-start gap-3">
-                        <p className="flex-1 min-w-0 text-[13px] text-gray-800 whitespace-pre-wrap leading-[1.7]">
-                          {q.stem}
-                        </p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="inline-flex items-center h-6 px-2 rounded-md bg-gray-100 text-[12px] font-bold text-gray-900">
+                              {q.questionType}
+                            </span>
+                            {q.difficulty ? (
+                              <span className="text-[12px] text-gray-800">{q.difficulty}</span>
+                            ) : null}
+                            {q.children && q.children.length > 0 ? (
+                              <span className="text-[11px] text-gray-400">{q.children.length} 道子题</span>
+                            ) : null}
+                          </div>
+                          <p className="text-[13px] text-gray-800 whitespace-pre-wrap leading-[1.7]">
+                            {q.stem}
+                          </p>
+                        </div>
                         <span
                           className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
                             expanded
@@ -335,29 +502,57 @@ export default function LekeQuestionPicker({
                       </div>
                     </button>
 
-                    {expanded && (
+                    {expanded ? (
                       <div className="px-4 pb-3">
                         <div className="rounded-lg bg-slate-50 border border-slate-100 px-3.5 py-3 space-y-3">
-                          <div>
-                            <div className="text-[11px] font-semibold text-emerald-700 mb-1">
-                              答案
-                            </div>
-                            <p className="text-[13px] text-gray-800 whitespace-pre-wrap leading-relaxed">
-                              {q.answer}
-                            </p>
-                          </div>
-                          <div className="h-px bg-slate-200/80" />
-                          <div>
-                            <div className="text-[11px] font-semibold text-amber-700 mb-1">
-                              解析
-                            </div>
-                            <p className="text-[13px] text-gray-700 whitespace-pre-wrap leading-[1.7]">
-                              {q.analysis}
-                            </p>
-                          </div>
+                          {q.children && q.children.length > 0 ? (
+                            q.children.map((child, index) => (
+                              <div key={child.id} className={index > 0 ? 'pt-3 border-t border-slate-200/80' : ''}>
+                                <div className="flex items-baseline text-[13px] leading-relaxed text-gray-800">
+                                  <span className="shrink-0 font-normal">（{index + 1}）</span>
+                                  <p className="min-w-0 whitespace-pre-wrap">
+                                    {materialChildTypeText(
+                                      child.questionType,
+                                      childTypeScheme,
+                                      child.questionType.includes('多选')
+                                    )}
+                                    {countBlanks(child.stem) > 0 ? <BlankText text={child.stem} /> : child.stem}
+                                  </p>
+                                </div>
+                                <div className="mt-2 text-[11px] font-semibold text-emerald-700 mb-1">答案</div>
+                                {countBlanks(child.stem) > 0 ? (
+                                  <BlankAnswerReadout answer={child.answer} count={countBlanks(child.stem)} />
+                                ) : (
+                                  <p className="text-[13px] text-gray-800 whitespace-pre-wrap leading-relaxed">
+                                    {child.answer || '暂无'}
+                                  </p>
+                                )}
+                                <div className="mt-2 text-[11px] font-semibold text-amber-700 mb-1">解析</div>
+                                <p className="text-[13px] text-gray-700 whitespace-pre-wrap leading-[1.7]">
+                                  {child.analysis || '暂无'}
+                                </p>
+                              </div>
+                            ))
+                          ) : (
+                            <>
+                              <div>
+                                <div className="text-[11px] font-semibold text-emerald-700 mb-1">答案</div>
+                                <p className="text-[13px] text-gray-800 whitespace-pre-wrap leading-relaxed">
+                                  {q.answer || '暂无'}
+                                </p>
+                              </div>
+                              <div className="h-px bg-slate-200/80" />
+                              <div>
+                                <div className="text-[11px] font-semibold text-amber-700 mb-1">解析</div>
+                                <p className="text-[13px] text-gray-700 whitespace-pre-wrap leading-[1.7]">
+                                  {q.analysis || '暂无'}
+                                </p>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
-                    )}
+                    ) : null}
 
                     <div className="px-4 py-2.5 border-t border-gray-100 flex items-center justify-end">
                       {list.indexOf(q) === 0 ? (
@@ -396,7 +591,7 @@ export default function LekeQuestionPicker({
           <AlertDialogHeader>
             <AlertDialogTitle>覆盖已有例题？</AlertDialogTitle>
             <AlertDialogDescription>
-              当前考点已有典型例题，选用后将覆盖题干、解题步骤和解题要点。是否继续？
+              当前考点已有一道典型例题。选用后会换成这道题，原来的例题不再保留。是否继续？
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

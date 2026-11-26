@@ -11,11 +11,14 @@ import {
   Star,
   X,
 } from 'lucide-react';
-import type {
-  KnowledgeCard,
-  KnowledgeCardExamPoint,
-  KnowledgeCardExamType,
-  RelatedExamPoint,
+import { MaterialChildTypeSchemeSwitch } from '@/components/shared/materialChildTypeScheme';
+import {
+  examPointHasExample,
+  TypicalExampleReadout,
+  type KnowledgeCard,
+  type KnowledgeCardExamPoint,
+  type KnowledgeCardExamType,
+  type RelatedExamPoint,
 } from '@/components/shared/KnowledgeCardPanel';
 
 export interface KnowledgeCardTabletPreviewProps {
@@ -38,29 +41,17 @@ const TYPE_META: Record<
 > = {
   basic: {
     label: '基础达标',
-    tagClass: 'bg-sky-100 text-sky-800 border-sky-300',
+    tagClass: 'bg-sky-50 text-sky-600',
   },
   advanced: {
     label: '综合进阶',
-    tagClass: 'bg-violet-100 text-violet-800 border-violet-300',
+    tagClass: 'bg-orange-50 text-orange-600',
   },
   sprint: {
     label: '高分冲刺',
-    tagClass: 'bg-amber-100 text-amber-800 border-amber-300',
+    tagClass: 'bg-pink-50 text-pink-600',
   },
 };
-
-function hasExample(ep?: KnowledgeCardExamPoint) {
-  if (!ep?.example) return false;
-  const ex = ep.example;
-  return (
-    !!(ex.stem && ex.stem.trim()) ||
-    ex.steps.length > 0 ||
-    ex.tips.length > 0 ||
-    ex.source === 'leke' ||
-    ex.source === 'third_party'
-  );
-}
 
 function mergeExams(
   related: RelatedExamPoint[] | undefined,
@@ -79,38 +70,6 @@ function mergeExams(
     };
   });
 }
-
-const EXAM_CARD_THEMES: Array<{
-  header: string;
-  body: string;
-  desc: string;
-  watermark: string;
-}> = [
-  {
-    header: 'from-emerald-50 to-teal-50/80',
-    body: 'border-emerald-100',
-    desc: 'bg-emerald-50/70 border-emerald-100',
-    watermark: 'text-emerald-200/70',
-  },
-  {
-    header: 'from-sky-50 to-blue-50/80',
-    body: 'border-sky-100',
-    desc: 'bg-sky-50/70 border-sky-100',
-    watermark: 'text-sky-200/70',
-  },
-  {
-    header: 'from-amber-50 to-orange-50/70',
-    body: 'border-amber-100',
-    desc: 'bg-amber-50/70 border-amber-100',
-    watermark: 'text-amber-200/70',
-  },
-  {
-    header: 'from-violet-50 to-purple-50/70',
-    body: 'border-violet-100',
-    desc: 'bg-violet-50/70 border-violet-100',
-    watermark: 'text-violet-200/70',
-  },
-];
 
 function Stamp({
   label,
@@ -212,9 +171,7 @@ function ExamTypePill({ type }: { type?: KnowledgeCardExamType }) {
   if (!type || !TYPE_META[type]) return null;
   const meta = TYPE_META[type];
   return (
-    <span
-      className={`inline-flex items-center h-5 px-2 rounded-full text-[10px] border whitespace-nowrap ${meta.tagClass}`}
-    >
+    <span className={`inline-flex items-center h-5 px-1.5 rounded text-[10px] whitespace-nowrap ${meta.tagClass}`}>
       {meta.label}
     </span>
   );
@@ -235,138 +192,68 @@ function ExamAccordionItem({
   onToggle: () => void;
   onToggleAnalysis: () => void;
 }) {
-  const theme = EXAM_CARD_THEMES[index % EXAM_CARD_THEMES.length];
-  const exampleReady = hasExample(ep);
-  const steps = ep.example?.steps ?? [];
-  const tips = ep.example?.tips ?? [];
+  const exampleReady = examPointHasExample(ep);
 
   return (
-    <div className={`rounded-2xl border overflow-hidden bg-white shadow-sm ${theme.body}`}>
+    <div className="overflow-hidden rounded-xl border border-emerald-200 bg-white">
       <button
         type="button"
         onClick={onToggle}
-        className={`w-full relative px-4 py-3 bg-gradient-to-r ${theme.header} flex items-center gap-2 text-left`}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
       >
-        <span
-          className={`absolute left-3 top-1 text-[28px] font-black leading-none select-none pointer-events-none ${theme.watermark}`}
-        >
-          考点{index + 1}
+        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-emerald-500 text-[10px] font-bold text-white">
+          {index + 1}
         </span>
-        <div className="relative z-[1] flex-1 min-w-0 flex items-center gap-2 pl-10">
-          <span className="text-[14px] font-semibold text-gray-900 truncate">
-            {ep.title || '未命名考点'}
-          </span>
-          <ExamTypePill type={ep.examType} />
-        </div>
+        <span className="shrink-0 text-[13px] font-semibold text-emerald-600">考点{index + 1}</span>
+        <span className="min-w-0 truncate text-[14px] font-semibold text-gray-900">
+          {ep.title || '未命名考点'}
+        </span>
+        <ExamTypePill type={ep.examType} />
+        <span className="flex-1" />
         {expanded ? (
-          <ChevronUp className="w-4 h-4 text-gray-400 shrink-0" />
+          <ChevronUp className="h-4 w-4 shrink-0 text-gray-400" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
         )}
       </button>
 
       {expanded && (
-        <div className="px-3 pb-3 pt-2 space-y-2.5">
-          {ep.description?.trim() ? (
-            <div className={`rounded-xl border px-3 py-2.5 ${theme.desc}`}>
-              <div className="text-[12px] text-gray-700 leading-relaxed">
-                <span className="font-semibold text-gray-800">考点说明：</span>
-                {ep.description}
-              </div>
-            </div>
-          ) : null}
+        <div className="space-y-2.5 px-3 pb-3">
+          <p className="text-[12px] leading-relaxed text-gray-600">
+            <span className="text-gray-800">考试说明：</span>
+            {ep.description?.trim() || '暂无'}
+          </p>
 
           {exampleReady && ep.example ? (
-            <div className="rounded-xl border border-teal-100 bg-white overflow-hidden">
-              <div className="px-3 py-2 flex items-center justify-between gap-2 bg-teal-50/60 border-b border-teal-100">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal-100 text-teal-700">
-                  <Star className="w-3 h-3 fill-teal-600 text-teal-600" />
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#b7ebc8] to-[#f3fbf6] px-2.5 py-1 text-[13px] font-bold text-black">
                   典型例题
+                  <Star className="h-3.5 w-3.5" />
                 </span>
-                {(steps.length > 0 || tips.length > 0 || ep.example.stem?.trim()) && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleAnalysis();
-                    }}
-                    className="inline-flex items-center gap-1 text-[12px] text-teal-700 hover:text-teal-800"
-                  >
-                    {analysisOpen ? (
-                      <EyeOff className="w-3.5 h-3.5" />
-                    ) : (
-                      <Eye className="w-3.5 h-3.5" />
-                    )}
-                    解析
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleAnalysis();
+                  }}
+                  className="inline-flex items-center gap-1 text-[12px] text-emerald-600 hover:text-emerald-700"
+                >
+                  {analysisOpen ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  {analysisOpen ? '隐藏解析' : '查看解析'}
+                </button>
               </div>
-
-              {ep.example.stem?.trim() ? (
-                <div className="px-3 py-2.5 text-[13px] text-gray-800 whitespace-pre-wrap leading-[1.7]">
-                  {ep.example.stem}
-                </div>
-              ) : null}
-
-              {analysisOpen && (
-                <div className="px-3 pb-3 space-y-3">
-                  {steps.length > 0 && (
-                    <div>
-                      <div className="flex items-center gap-1.5 text-orange-500 font-semibold text-[13px] mb-2">
-                        <span className="w-2 h-2 rotate-45 bg-orange-400" />
-                        解题步骤
-                      </div>
-                      <ol className="space-y-2.5">
-                        {steps.map((st, i) => (
-                          <li key={st.id} className="border-l-[3px] border-amber-400 pl-3">
-                            <div className="text-[13px] font-medium text-gray-900">
-                              <span className="mr-1 text-amber-600">{i + 1}.</span>
-                              {st.title || ''}
-                            </div>
-                            {st.detail?.trim() ? (
-                              <div className="mt-1 text-[12px] text-gray-700 whitespace-pre-wrap leading-relaxed bg-slate-50 rounded-lg px-2.5 py-2 border border-slate-100">
-                                {st.detail}
-                              </div>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  )}
-
-                  {tips.length > 0 && (
-                    <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
-                      <div className="flex items-center gap-1.5 text-orange-500 font-semibold text-[13px] mb-2">
-                        <span className="w-2 h-2 rotate-45 bg-orange-400" />
-                        解题要点
-                      </div>
-                      <div className="space-y-2">
-                        {tips.map((tip, i) => (
-                          <div key={tip.id} className="flex gap-2 items-start">
-                            <span className="mt-0.5 w-5 h-5 rounded-full bg-orange-400 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
-                              {i + 1}
-                            </span>
-                            <div className="flex-1 text-[12px] text-gray-800 whitespace-pre-wrap leading-relaxed bg-white/80 rounded-lg px-2.5 py-1.5 border border-amber-100/80">
-                              {tip.content}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-[12px] text-gray-500 hover:text-amber-600"
-                  >
-                    加入好题本
-                    <Star className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
+              <TypicalExampleReadout example={ep.example} revealAnswer={analysisOpen} variant="preview" />
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-[12px] text-gray-500 hover:text-amber-600"
+              >
+                <Star className="h-3.5 w-3.5" />
+                加入好题本
+              </button>
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-gray-200 px-3 py-4 text-center text-[12px] text-gray-400">
+            <div className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-[12px] text-gray-400">
               暂无典型例题
             </div>
           )}
@@ -386,7 +273,7 @@ export default function KnowledgeCardTabletPreview({
   relatedExamPoints,
   examPoints: examPointsProp,
 }: KnowledgeCardTabletPreviewProps) {
-  const [page, setPage] = useState<PreviewPage>('concept');
+  const [page, setPage] = useState<PreviewPage>('exam');
   const [expandedExamIds, setExpandedExamIds] = useState<Set<string>>(new Set());
   const [analysisExamIds, setAnalysisExamIds] = useState<Set<string>>(new Set());
   const [scale, setScale] = useState(1);
@@ -405,10 +292,10 @@ export default function KnowledgeCardTabletPreview({
 
   useEffect(() => {
     if (!open) return;
-    setPage('concept');
+    setPage(hasExamPage ? 'exam' : 'concept');
     setExpandedExamIds(new Set());
     setAnalysisExamIds(new Set());
-  }, [open]);
+  }, [open, hasExamPage]);
 
   useEffect(() => {
     if (!open) return;
@@ -461,7 +348,10 @@ export default function KnowledgeCardTabletPreview({
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4" data-req-surface="preview">
-      <div className="absolute top-4 left-4 text-white/90 text-sm font-medium">平板预览</div>
+      <div className="absolute top-4 left-4 flex items-center gap-3 text-white/90 text-sm font-medium">
+        <span>平板预览</span>
+        <MaterialChildTypeSchemeSwitch tone="dark" />
+      </div>
       <button
         type="button"
         onClick={onClose}
@@ -635,29 +525,29 @@ export default function KnowledgeCardTabletPreview({
                           onToggleAnalysis={() => toggleAnalysis(ep.id)}
                         />
                       ))}
-                      <div className="rounded-xl bg-amber-50 border border-amber-100/80 p-3">
-                        <div className="flex items-center gap-1.5 text-orange-500 font-semibold text-[13px] mb-2">
-                          <span className="w-2 h-2 rotate-45 bg-orange-400" />
-                          知识点Tips
+                      <div className="overflow-hidden rounded-xl border border-orange-100">
+                        <div className="flex items-center justify-between bg-gradient-to-r from-orange-400 to-amber-300 px-3 py-2 text-white">
+                          <span className="text-[13px] font-semibold">知识点Tips</span>
+                          <span className="text-[11px] text-white/90">记牢这几条，做题更快更稳</span>
                         </div>
+                        <div className="bg-orange-50/50 p-3">
                         {knowledgeTips.length === 0 ? (
-                          <p className="text-[13px] text-gray-800 leading-relaxed">暂无</p>
+                          <p className="text-[13px] leading-relaxed text-gray-800">暂无</p>
                         ) : (
                           <div className="space-y-2">
                             {knowledgeTips.map((tip, i) => (
                               <div key={tip.id} className="flex items-start gap-2">
-                                {knowledgeTips.length > 1 && (
-                                  <span className="mt-0.5 w-5 h-5 rounded-full bg-orange-400 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
-                                    {i + 1}
-                                  </span>
-                                )}
-                                <p className="flex-1 text-[13px] text-gray-800 whitespace-pre-wrap leading-relaxed">
+                                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-orange-400 text-[10px] font-bold text-white">
+                                  {i + 1}
+                                </span>
+                                <p className="flex-1 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-800">
                                   {tip.content}
                                 </p>
                               </div>
                             ))}
                           </div>
                         )}
+                        </div>
                       </div>
                     </div>
                   </>

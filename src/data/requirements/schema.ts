@@ -58,6 +58,11 @@ export interface RequirementItem {
   logicSections: LogicSection[];
   acceptance: string[];
   source: RequirementSource;
+  /**
+   * 增量批次。有值表示这条只属于该批次新增的业务逻辑，
+   * 不并入此前已上线卡片。阅读面板可用「只看本次」单独查看。
+   */
+  batchId?: string;
 }
 
 export interface ExcludedDecision {

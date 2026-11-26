@@ -1,4 +1,5 @@
 import type { LogicSection, RequirementItem } from '@/data/requirements/schema';
+import { getRequirementRegistry } from '@/data/requirements';
 
 export type RequirementLogicPatch = {
   title?: string;
@@ -92,4 +93,51 @@ export function cloneLogicSections(sections: LogicSection[]): LogicSection[] {
     title: section.title,
     items: [...section.items],
   }));
+}
+
+export const REQ_LOGIC_CHANGED = 'req-logic-changed';
+
+export function readRequirementLogic(
+  registryId: string,
+  requirement: RequirementItem
+): RequirementItem {
+  const patch = loadLogicOverlay(registryId)[requirement.id];
+  if (!patch || isStaleLogicPatch(requirement, patch)) return requirement;
+  return mergeRequirementWithPatch(requirement, patch);
+}
+
+export async function saveRequirementLogic(
+  registryId: string,
+  next: RequirementItem
+): Promise<'saved' | 'local'> {
+  const bundled = getRequirementRegistry(registryId)?.requirements.find((item) => item.id === next.id);
+  const overlay = loadLogicOverlay(registryId);
+  overlay[next.id] = {
+    title: next.title,
+    logicSections: cloneLogicSections(next.logicSections),
+    baseFingerprint: bundled
+      ? logicFingerprint(bundled.title, bundled.logicSections)
+      : undefined,
+  };
+  saveLogicOverlay(registryId, overlay);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(REQ_LOGIC_CHANGED, { detail: { registryId, requirementId: next.id } })
+    );
+  }
+  try {
+    const res = await fetch('/api/requirements/logic', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        registryId,
+        requirementId: next.id,
+        title: next.title,
+        logicSections: next.logicSections,
+      }),
+    });
+    return res.ok ? 'saved' : 'local';
+  } catch {
+    return 'local';
+  }
 }

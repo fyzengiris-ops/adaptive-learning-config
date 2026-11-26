@@ -609,6 +609,29 @@ html.is-prd-open [data-req-surface="picker"] {
   border-bottom: 1px solid #eef2f6;
 }
 
+.prd-panel-batch {
+  display: flex;
+  gap: 6px;
+  padding: 2px 2px 8px;
+}
+
+.prd-panel-batch button {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+}
+
+.prd-panel-batch button.is-active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
 .prd-panel-item {
   width: 100%;
   display: flex;
@@ -692,10 +715,129 @@ html.is-prd-open [data-req-surface="picker"] {
 .prd-panel-section li {
   display: flex;
   gap: 8px;
+  align-items: flex-start;
   font-size: 13px;
   line-height: 1.55;
   color: #475569;
   margin-bottom: 6px;
+}
+
+.prd-logic-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.prd-logic-title-row h4 {
+  flex: 1;
+  min-width: 0;
+}
+
+.prd-logic-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.prd-logic-readonly {
+  white-space: pre-wrap;
+}
+
+.prd-logic-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.prd-logic-field .prd-logic-editor,
+.prd-logic-field .prd-logic-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.prd-logic-accent {
+  color: #c2410c;
+  font-weight: 600;
+}
+
+.prd-logic-accent-btn {
+  flex-shrink: 0;
+  margin-top: 1px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: #c2410c;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.prd-logic-accent-btn.is-on {
+  font-weight: 700;
+}
+
+.prd-logic-text {
+  display: inline-block;
+  width: 100%;
+  white-space: pre-wrap;
+  border-radius: 4px;
+  cursor: text;
+}
+
+.prd-logic-text:hover {
+  background: #f1f5f9;
+}
+
+.prd-logic-placeholder {
+  color: #94a3b8;
+}
+
+.prd-logic-editor {
+  width: 100%;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+}
+
+.prd-logic-editor.is-multiline {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.prd-logic-remove {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.prd-logic-remove:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.prd-logic-add {
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #2f7cff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.prd-logic-add:hover {
+  text-decoration: underline;
+}
+
+.prd-logic-add-section {
+  margin-top: 8px;
 }
 
 .prd-panel-item-no {
@@ -715,4 +857,22 @@ html.is-prd-open [data-req-surface="picker"] {
 @keyframes req-anchor-pulse {
   0% { box-shadow: 0 0 0 0 rgba(47, 124, 255, 0.45); }
   100% { box-shadow: 0 0 0 12px rgba(47, 124, 255, 0); }
+}
+
+/* 已有标注、本次标注分开隐藏：数字角标、悬浮卡片和对应阅读面板 */
+html.prd-baseline-hidden .prd-scope-baseline,
+html.prd-current-hidden .prd-scope-current {
+  display: none !important;
+}
+
+html.prd-baseline-hidden .prd-reader-shell.is-prd-baseline,
+html.prd-current-hidden .prd-reader-shell.is-prd-current {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0 !important;
+  --prd-panel-offset: 0px !important;
+  --prd-panel-width: 0px !important;
+}
+
+.req-marker-positioner.prd-scope-current {
+  z-index: 51;
 }

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Settings, ChevronDown, Check } from 'lucide-react';
+import PrdVisibilityToggle from '@/components/prd/PrdVisibilityToggle';
 import Sidebar from './Sidebar';
 import { useRole, roleConfig, RoleType } from '@/contexts/RoleContext';
 
@@ -54,6 +55,7 @@ export default function PageLayout({ children, activeMenuId, breadcrumbs }: Page
               ))}
             </div>
             <div className="flex items-center gap-4">
+              <PrdVisibilityToggle />
               <button className="text-gray-600 hover:text-gray-900 transition-colors">
                 <Settings className="w-5 h-5" />
               </button>

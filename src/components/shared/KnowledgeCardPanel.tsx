@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   FileText,
   Plus,
@@ -8,10 +8,10 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronDown,
-  ChevronUp,
-  ChevronRight,
   Image as ImageIcon,
   BookOpen,
+  Eye,
+  GripVertical,
   X,
   Link2,
   Undo2,
@@ -28,12 +28,14 @@ import {
   FunctionSquare,
   Table2,
   Eraser,
-  TabletSmartphone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import LekeQuestionPicker, { type BankQuestion } from '@/components/shared/LekeQuestionPicker';
 import KnowledgeCardTabletPreview from '@/components/shared/KnowledgeCardTabletPreview';
+import {
+  materialChildTypeText,
+  useMaterialChildTypeScheme,
+} from '@/components/shared/materialChildTypeScheme';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -78,23 +80,55 @@ export interface KnowledgeCardCustomModule {
   items: KnowledgeCardModuleItem[];
 }
 
-export interface KnowledgeCardExamStep {
-  id: string;
-  title?: string;
-  detail: string;
-}
-
 export interface KnowledgeCardExamTip {
   id: string;
   content: string;
 }
 
-export interface KnowledgeCardExample {
+export type ExampleQuestionKind = 'single' | 'multiple' | 'judge' | 'blank' | 'qa' | 'material';
+
+export const EXAMPLE_QUESTION_KINDS: Array<{ id: ExampleQuestionKind; label: string }> = [
+  { id: 'single', label: '单选题' },
+  { id: 'multiple', label: '多选题' },
+  { id: 'judge', label: '判断题' },
+  { id: 'blank', label: '填空题' },
+  { id: 'qa', label: '问答题' },
+  { id: 'material', label: '材料题' },
+];
+
+export interface ExampleOption {
+  /** 系统按顺序分配，A、B、C、D，不由用户填写。 */
+  key: string;
+  text: string;
+}
+
+export interface ExampleSubQuestion {
+  id: string;
+  kind: Exclude<ExampleQuestionKind, 'material'>;
   stem: string;
+  /** 单选、多选的选项。至少两项，字母由系统分配。 */
+  options: ExampleOption[];
+  answer: string;
+  /** 填空题按题干里的空线拆开的答案，和第几条空一一对应。 */
+  blankAnswers?: string[];
+  analysis: string;
+}
+
+export interface KnowledgeCardExample {
+  questionId: string;
+  /** 系统选题时记下的原题 ID。改内容后 questionId 换成新题，原题不覆盖。 */
+  bankQuestionId?: string;
   source: 'manual' | 'leke' | 'third_party';
-  lekeQuestionId?: string;
-  steps: KnowledgeCardExamStep[];
-  tips: KnowledgeCardExamTip[];
+  /** 未选题型时为空。手动录入先选题型，系统选题后才带上题型。 */
+  kind: ExampleQuestionKind | null;
+  stem: string;
+  /** 单选、多选的选项。至少两项，字母由系统分配。 */
+  options: ExampleOption[];
+  answer: string;
+  /** 填空题按题干里的空线拆开的答案，和第几条空一一对应。 */
+  blankAnswers?: string[];
+  analysis: string;
+  children: ExampleSubQuestion[];
 }
 
 export type KnowledgeCardExamType = 'basic' | 'advanced' | 'sprint';
@@ -172,15 +206,23 @@ export function mergeCardExamPoints(
   });
 }
 
+export function exampleKindLabel(kind?: ExampleQuestionKind | null) {
+  if (!kind) return '';
+  return EXAMPLE_QUESTION_KINDS.find((item) => item.id === kind)?.label || '';
+}
+
+function questionBodyHasText(stem?: string, options?: ExampleOption[]) {
+  if (stem && stem.trim()) return true;
+  return !!options?.some((item) => item.text.trim());
+}
+
 export function examPointHasExample(ep?: KnowledgeCardExamPoint) {
-  if (!ep?.example) return false;
-  const ex = ep.example;
+  const ex = ep?.example;
+  if (!ex) return false;
+  if (questionBodyHasText(ex.stem, ex.options)) return true;
   return (
-    !!(ex.stem && ex.stem.trim()) ||
-    ex.steps.length > 0 ||
-    ex.tips.length > 0 ||
-    ex.source === 'leke' ||
-    ex.source === 'third_party'
+    ex.kind === 'material' &&
+    ex.children.some((child) => questionBodyHasText(child.stem, child.options))
   );
 }
 
@@ -296,24 +338,14 @@ export function sampleKnowledgeCard(): KnowledgeCard {
         examType: 'basic',
         description: '直接给出解析式，根据指数正负判断单调性。',
         example: {
-          stem: '判断函数 y = x^(2/3) 的定义域与单调性。',
+          questionId: 'sample-q-ep1',
           source: 'manual',
-          steps: [
-            {
-              id: 'st-1',
-              title: '明确定义域与指数符号',
-              detail: '先求定义域，再看 α 的正负。',
-            },
-            {
-              id: 'st-2',
-              title: '套用单调性结论',
-              detail: 'α = 2/3 > 0，故在 (0, +∞) 上单调递增。',
-            },
-          ],
-          tips: [
-            { id: 'tip-1', content: '先看定义域，再看指数正负。' },
-            { id: 'tip-2', content: '系数必须为 1，否则不是幂函数。' },
-          ],
+          kind: 'qa',
+          stem: '判断函数 y = x^(2/3) 的定义域与单调性。',
+          options: [],
+          answer: '定义域为 R；在 (0, +∞) 上单调递增。',
+          analysis: 'y = x^(2/3) = (∛x)^2，立方根对一切实数有意义，定义域为 R。α = 2/3 > 0，故在 (0, +∞) 上单调递增。',
+          children: [],
         },
       },
       {
@@ -326,6 +358,178 @@ export function sampleKnowledgeCard(): KnowledgeCard {
         id: 'ep-3',
         title: '由幂函数的单调性求参数',
         examType: 'sprint',
+      },
+    ],
+  };
+}
+
+function choiceOptions(texts: string[]): ExampleOption[] {
+  return texts.map((text, index) => ({ key: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[index], text }));
+}
+
+function seededExample(
+  questionId: string,
+  kind: ExampleQuestionKind,
+  stem: string,
+  answer: string,
+  analysis: string,
+  options: ExampleOption[] = [],
+  children: ExampleSubQuestion[] = [],
+  blankAnswers?: string[],
+): KnowledgeCardExample {
+  return {
+    questionId,
+    source: 'manual',
+    kind,
+    stem,
+    options,
+    answer: blankAnswers ? formatBlankAnswers(blankAnswers) : answer,
+    blankAnswers,
+    analysis,
+    children,
+  };
+}
+
+/** 仅「反比例函数」这一知识点的考点典型例题。材料题的第一道子题固定为多选题。 */
+export function inverseProportionKnowledgeCard(): KnowledgeCard {
+  const materialChildren: ExampleSubQuestion[] = [
+    {
+      id: 'q-inverse-6-1',
+      kind: 'multiple',
+      stem: '下列各点中，在该函数图象上的有（ ）。',
+      options: choiceOptions(['(1, 6)', '(3, 2)', '(-2, -3)', '(6, 2)']),
+      answer: 'A、B、C',
+      analysis: 'k = 6。6/1 = 6，6/3 = 2，6/(-2) = -3，三点都在图象上。6/6 = 1 ≠ 2，点 (6, 2) 不在图象上。',
+    },
+    {
+      id: 'q-inverse-6-2',
+      kind: 'judge',
+      stem: '该函数图象位于第一、三象限。（ ）',
+      options: [],
+      answer: '正确',
+      analysis: 'k = 6 > 0，反比例函数图象在第一、三象限。',
+    },
+    {
+      id: 'q-inverse-6-3',
+      kind: 'blank',
+      stem: `当 x = 1 时，y = ${blankMark(0)}；当 x = -2 时，y = ${blankMark(1)}。`,
+      options: [],
+      answer: formatBlankAnswers(['6', '-3']),
+      blankAnswers: ['6', '-3'],
+      analysis: 'k = 6。当 x = 1 时，y = 6/1 = 6；当 x = -2 时，y = 6/(-2) = -3。',
+    },
+    {
+      id: 'q-inverse-6-4',
+      kind: 'qa',
+      stem: '若点 (a, 4) 在该函数图象上，求 a 的值。',
+      options: [],
+      answer: 'a = 3/2',
+      analysis: '4 = 6/a，且 a ≠ 0，所以 a = 6/4 = 3/2。',
+    },
+  ];
+
+  return {
+    keyPoints: [{ id: 'kp-inverse-empty', content: '', images: [] }],
+    customModules: [],
+    knowledgeTips: [{ id: 'ktip-inverse-empty', content: '' }],
+    examPoints: [
+      {
+        id: 'ep-inverse-1',
+        title: '反比例函数描述数量关系',
+        examType: 'basic',
+        example: seededExample(
+          'q-inverse-1',
+          'single',
+          '下列关系中，成反比例函数关系的是（ ）。',
+          'C',
+          '矩形面积一定时，长与宽的乘积为常数，可写成 y = k/x（k ≠ 0），成反比例。正方形边长与面积、圆的半径与周长不是这种关系；速度一定时，路程与时间成正比例。',
+          choiceOptions([
+            '正方形的边长与面积',
+            '速度一定时，路程与时间',
+            '面积为 12 的矩形，长与宽',
+            '圆的半径与周长',
+          ]),
+        ),
+      },
+      {
+        id: 'ep-inverse-2',
+        title: '反比例函数的判断',
+        examType: 'basic',
+      },
+      {
+        id: 'ep-inverse-3',
+        title: '根据反比例函数定义求参数',
+        examType: 'basic',
+        example: seededExample(
+          'q-inverse-3',
+          'judge',
+          '若 y = (m - 2)/x 是反比例函数，则 m ≠ 2。（ ）',
+          '正确',
+          '反比例函数 y = k/x 要求 k ≠ 0。这里 k = m - 2，所以 m - 2 ≠ 0，即 m ≠ 2。',
+        ),
+      },
+      {
+        id: 'ep-inverse-4',
+        title: '反比例函数值的计算',
+        examType: 'advanced',
+        example: seededExample(
+          'q-inverse-4',
+          'blank',
+          `已知反比例函数 y = 6/x。当 x = 2 时，y = ${blankMark(0)}；当 x = -3 时，y = ${blankMark(1)}。`,
+          '',
+          '把 x = 2 代入 y = 6/x，得 y = 3。把 x = -3 代入，得 y = -2。',
+          [],
+          [],
+          ['3', '-2'],
+        ),
+      },
+      {
+        id: 'ep-inverse-5',
+        title: '已知反比例函数值求自变量',
+        examType: 'advanced',
+        example: seededExample(
+          'q-inverse-5',
+          'qa',
+          '已知反比例函数 y = 12/x。当函数值为 -3 时，求自变量 x 的值。',
+          'x = -4',
+          '由 -3 = 12/x，得 x = 12/(-3) = -4。',
+        ),
+      },
+      {
+        id: 'ep-inverse-6',
+        title: '待定系数法求反比例函数解析式',
+        examType: 'advanced',
+        example: seededExample(
+          'q-inverse-6',
+          'material',
+          '反比例函数 y = k/x（k ≠ 0）的图象经过点 (2, 3)。',
+          '',
+          '',
+          [],
+          materialChildren,
+        ),
+      },
+      {
+        id: 'ep-inverse-7',
+        title: '反比例函数图象的判断与作图',
+        examType: 'sprint',
+      },
+      {
+        id: 'ep-inverse-8',
+        title: '已知反比例函数图象判断解析式',
+        examType: 'sprint',
+      },
+      {
+        id: 'ep-inverse-9',
+        title: '根据反比例函数图象对称性求点坐标',
+        examType: 'sprint',
+        example: seededExample(
+          'q-inverse-9',
+          'judge',
+          '点 (2, 3) 在反比例函数 y = k/x 的图象上，则点 (-2, -3) 也在该图象上。（ ）',
+          '正确',
+          '反比例函数的图象关于原点成中心对称。(2, 3) 在图象上时 k = 6，点 (-2, -3) 满足 6/(-2) = -3，也在图象上。',
+        ),
       },
     ],
   };
@@ -361,14 +565,379 @@ function examPointHasContent(ep: KnowledgeCardExamPoint) {
   return !isBlank(ep.title) || !!ep.examType || !isBlank(ep.description) || !!ep.example;
 }
 
-function exampleHasContent(ex: KnowledgeCardExample) {
+function optionHasText(options?: ExampleOption[]) {
+  return !!options?.some((item) => !isBlank(item.text));
+}
+
+const CIRCLED_NUMBERS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+const BLANK_PATTERN = /____([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]|\d+)____/g;
+
+function circledNumber(index: number) {
+  const n = index + 1;
+  return n <= CIRCLED_NUMBERS.length ? CIRCLED_NUMBERS[n - 1] : String(n);
+}
+
+function blankMark(index: number) {
+  return `____${circledNumber(index)}____`;
+}
+
+function countBlanks(text: string) {
+  return text.match(BLANK_PATTERN)?.length ?? 0;
+}
+
+function renumberBlanks(text: string) {
+  let index = 0;
+  return text.replace(BLANK_PATTERN, () => blankMark(index++));
+}
+
+function insertBlankAt(text: string, cursor: number) {
+  const mark = blankMark(0);
+  const inserted = text.slice(0, cursor) + mark + text.slice(cursor);
+  return { text: renumberBlanks(inserted), cursor: cursor + mark.length };
+}
+
+function blankAnswersHaveText(answers?: string[]) {
+  return !!answers?.some((item) => !isBlank(item));
+}
+
+function alignBlankAnswers(answer: string, stored: string[] | undefined, count: number) {
+  const source = stored && stored.length > 0 ? stored : [];
+  return Array.from({ length: count }, (_, index) => {
+    if (source.length > 0) return source[index] ?? '';
+    return index === 0 ? answer : '';
+  });
+}
+
+function formatBlankAnswers(answers: string[]) {
+  return answers.map((item, index) => `${index + 1} ${item}`.trimEnd()).join('\n');
+}
+
+function BlankLine({ label }: { label: string }) {
+  return (
+    <span className="inline-flex flex-col items-stretch align-baseline leading-none">
+      <span>
+        <span className="text-transparent">____</span>
+        {label}
+        <span className="text-transparent">____</span>
+      </span>
+      <span aria-hidden className="mt-1 h-px w-full bg-gray-800" />
+    </span>
+  );
+}
+
+function BlankText({ text }: { text: string }) {
+  const pattern = new RegExp(BLANK_PATTERN.source, 'g');
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = pattern.exec(text))) {
+    if (match.index > last) nodes.push(text.slice(last, match.index));
+    nodes.push(<BlankLine key={key++} label={match[1]} />);
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return <>{nodes}</>;
+}
+
+const BLANK_SENTINEL = '\u0001';
+
+function normalizeBlanks(text: string) {
+  return text.replace(new RegExp(BLANK_PATTERN.source, 'g'), BLANK_SENTINEL);
+}
+
+function diffChars(a: string, b: string) {
+  const n = a.length;
+  const m = b.length;
+  const dp: number[][] = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i -= 1) {
+    for (let j = m - 1; j >= 0; j -= 1) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const ops: Array<{ type: 'equal' | 'insert' | 'delete'; text: string }> = [];
+  const push = (type: 'equal' | 'insert' | 'delete', ch: string) => {
+    const last = ops[ops.length - 1];
+    if (last && last.type === type) last.text += ch;
+    else ops.push({ type, text: ch });
+  };
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      push('equal', a[i]);
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      push('delete', a[i]);
+      i += 1;
+    } else {
+      push('insert', b[j]);
+      j += 1;
+    }
+  }
+  while (i < n) {
+    push('delete', a[i]);
+    i += 1;
+  }
+  while (j < m) {
+    push('insert', b[j]);
+    j += 1;
+  }
+  return ops;
+}
+
+/** 题干里的空增删后，已填写的答案跟着原来的空一起移动。 */
+function remapBlankAnswers(oldStem: string, newStem: string, answers: string[]) {
+  let oldIndex = 0;
+  const next: string[] = [];
+  diffChars(normalizeBlanks(oldStem), normalizeBlanks(newStem)).forEach((op) => {
+    for (const ch of op.text) {
+      if (ch !== BLANK_SENTINEL) continue;
+      if (op.type === 'equal') {
+        next.push(answers[oldIndex] ?? '');
+        oldIndex += 1;
+      } else if (op.type === 'insert') {
+        next.push('');
+      } else {
+        oldIndex += 1;
+      }
+    }
+  });
+  return next;
+}
+
+function withBlankFields<T extends { stem: string; answer: string; blankAnswers?: string[] }>(source: T, stem: string) {
+  const nextStem = renumberBlanks(stem);
+  const count = countBlanks(nextStem);
+  if (count === 0) {
+    const kept = source.blankAnswers?.find((item) => !isBlank(item)) || source.answer;
+    return { stem: nextStem, answer: kept, blankAnswers: undefined as string[] | undefined };
+  }
+  const previousCount = countBlanks(source.stem);
+  const blankAnswers =
+    previousCount > 0
+      ? remapBlankAnswers(
+          source.stem,
+          nextStem,
+          source.blankAnswers ?? alignBlankAnswers(source.answer, undefined, previousCount),
+        )
+      : alignBlankAnswers(source.answer, source.blankAnswers, count);
+  return { stem: nextStem, blankAnswers, answer: formatBlankAnswers(blankAnswers) };
+}
+
+function subQuestionHasContent(sub: ExampleSubQuestion) {
+  return (
+    !isBlank(sub.stem) ||
+    !isBlank(sub.answer) ||
+    !isBlank(sub.analysis) ||
+    optionHasText(sub.options) ||
+    blankAnswersHaveText(sub.blankAnswers)
+  );
+}
+
+function exampleHasWritableContent(ex: KnowledgeCardExample) {
   return (
     !isBlank(ex.stem) ||
-    ex.steps.length > 0 ||
-    ex.tips.length > 0 ||
-    ex.source === 'leke' ||
-    ex.source === 'third_party'
+    !isBlank(ex.answer) ||
+    !isBlank(ex.analysis) ||
+    optionHasText(ex.options) ||
+    blankAnswersHaveText(ex.blankAnswers) ||
+    ex.children.some(subQuestionHasContent)
   );
+}
+
+function exampleHasContent(ex: KnowledgeCardExample) {
+  return exampleHasWritableContent(ex) || !!ex.questionId || !!ex.bankQuestionId;
+}
+
+function emptyExample(): KnowledgeCardExample {
+  return {
+    questionId: '',
+    source: 'manual',
+    kind: null,
+    stem: '',
+    options: [],
+    answer: '',
+    analysis: '',
+    children: [],
+  };
+}
+
+const OPTION_KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const MIN_CHOICE_OPTIONS = 2;
+const DEFAULT_CHOICE_OPTIONS = 4;
+
+function isOptionKind(kind?: ExampleQuestionKind | null) {
+  return kind === 'single' || kind === 'multiple';
+}
+
+function emptyChoiceOptions(count = MIN_CHOICE_OPTIONS): ExampleOption[] {
+  return OPTION_KEYS.slice(0, count).map((key) => ({ key, text: '' }));
+}
+
+function normalizeOptions(options?: ExampleOption[]): ExampleOption[] {
+  const source = options && options.length > 0 ? options : [];
+  const padded = source.slice(0, OPTION_KEYS.length);
+  while (padded.length < MIN_CHOICE_OPTIONS) {
+    padded.push({ key: '', text: '' });
+  }
+  return padded.map((item, index) => ({
+    key: OPTION_KEYS[index],
+    text: item.text ?? '',
+  }));
+}
+
+/** 把题干末尾的「A. …」行拆成独立选项。拆不出至少两项时保持原题干。 */
+function splitStemOptions(stem: string): { stem: string; options: ExampleOption[] } | null {
+  const stemLines: string[] = [];
+  const found: ExampleOption[] = [];
+  stem.replace(/\r\n/g, '\n').split('\n').forEach((line) => {
+    const match = line.match(/^\s*([A-Z])\s*[.、．]\s*(.*)$/);
+    if (match) found.push({ key: match[1], text: match[2].trim() });
+    else stemLines.push(line);
+  });
+  if (found.length < MIN_CHOICE_OPTIONS) return null;
+  return { stem: stemLines.join('\n').trim(), options: normalizeOptions(found) };
+}
+
+function ensureChoiceFields(stem: string, options?: ExampleOption[]) {
+  if (options && options.length >= MIN_CHOICE_OPTIONS) {
+    return { stem, options: normalizeOptions(options) };
+  }
+  return splitStemOptions(stem) ?? { stem, options: emptyChoiceOptions() };
+}
+
+function mapBankKind(questionType: string): ExampleQuestionKind {
+  if (questionType.includes('材料')) return 'material';
+  if (questionType.includes('多选')) return 'multiple';
+  if (questionType.includes('单选') || questionType.includes('选择')) return 'single';
+  if (questionType.includes('判断')) return 'judge';
+  if (questionType.includes('填空')) return 'blank';
+  return 'qa';
+}
+
+function mapOrdinaryKind(questionType: string): ExampleSubQuestion['kind'] {
+  const kind = mapBankKind(questionType);
+  return kind === 'material' ? 'qa' : kind;
+}
+
+function splitImportedBlankAnswers(answer: string, count: number) {
+  if (count <= 1) return [answer.trim()];
+  const lines = answer
+    .split(/\r?\n|[;；]/)
+    .map((part) => part.replace(/^\s*(?:[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]|\d+)\s*[.、．]?\s*/, '').trim())
+    .filter((part) => part.length > 0);
+  const pieces = lines.length > 1 ? lines : answer.split(/[、]/).map((part) => part.trim()).filter((part) => part.length > 0);
+  if (pieces.length === count) return pieces;
+  return Array.from({ length: count }, (_, index) => (index === 0 ? answer.trim() : ''));
+}
+
+function styleBlankQuestion(stem: string, answer: string) {
+  let index = 0;
+  const converted = countBlanks(stem) > 0 ? stem : stem.replace(/_{2,}/g, () => blankMark(index++));
+  const nextStem = renumberBlanks(converted);
+  const count = countBlanks(nextStem);
+  if (count === 0) return { stem: nextStem, answer, blankAnswers: undefined as string[] | undefined };
+  const blankAnswers = splitImportedBlankAnswers(answer, count);
+  return { stem: nextStem, blankAnswers, answer: formatBlankAnswers(blankAnswers) };
+}
+
+export function bankQuestionToExample(q: BankQuestion): KnowledgeCardExample {
+  const kind = q.children && q.children.length > 0 ? 'material' : mapBankKind(q.questionType);
+  const parts = isOptionKind(kind) ? ensureChoiceFields(q.stem) : { stem: q.stem, options: [] as ExampleOption[] };
+  const blank = kind === 'blank' ? styleBlankQuestion(parts.stem, q.answer) : null;
+  return {
+    questionId: q.id,
+    bankQuestionId: q.id,
+    source: q.source,
+    kind,
+    stem: blank?.stem ?? parts.stem,
+    options: parts.options,
+    answer: kind === 'material' ? '' : blank?.answer ?? q.answer,
+    blankAnswers: blank?.blankAnswers,
+    analysis: kind === 'material' ? '' : q.analysis,
+    children:
+      kind === 'material'
+        ? (q.children || []).map((child) => {
+            const childKind = mapOrdinaryKind(child.questionType);
+            const childParts = isOptionKind(childKind)
+              ? ensureChoiceFields(child.stem)
+              : { stem: child.stem, options: [] as ExampleOption[] };
+            const childBlank = childKind === 'blank' ? styleBlankQuestion(childParts.stem, child.answer) : null;
+            return {
+              id: child.id,
+              kind: childKind,
+              stem: childBlank?.stem ?? childParts.stem,
+              options: childParts.options,
+              answer: childBlank?.answer ?? child.answer,
+              blankAnswers: childBlank?.blankAnswers,
+              analysis: child.analysis,
+            };
+          })
+        : [],
+  };
+}
+
+function commitExampleChange(prev: KnowledgeCardExample, next: KnowledgeCardExample): KnowledgeCardExample {
+  const linked = !!prev.bankQuestionId && prev.questionId === prev.bankQuestionId;
+  if (linked) {
+    return { ...next, questionId: uid('q'), source: 'manual' };
+  }
+  if (!next.questionId && exampleHasWritableContent(next)) {
+    return { ...next, questionId: uid('q') };
+  }
+  return next;
+}
+
+function finishKindSwitch<T extends { kind: string; stem: string; answer: string; blankAnswers?: string[] }>(
+  next: T,
+): T {
+  if (next.kind !== 'blank') return { ...next, blankAnswers: undefined };
+  return { ...next, ...withBlankFields(next, next.stem) };
+}
+
+function withSubQuestionKind(
+  sub: ExampleSubQuestion,
+  kind: ExampleSubQuestion['kind'],
+): ExampleSubQuestion {
+  if (sub.kind === kind) return sub;
+  if (isOptionKind(sub.kind) && isOptionKind(kind)) return finishKindSwitch({ ...sub, kind });
+  return finishKindSwitch({
+    ...sub,
+    kind,
+    options: isOptionKind(kind) ? emptyChoiceOptions(DEFAULT_CHOICE_OPTIONS) : [],
+  });
+}
+
+function withExampleKind(ex: KnowledgeCardExample, kind: ExampleQuestionKind): KnowledgeCardExample {
+  if (kind === ex.kind) return ex;
+  if (isOptionKind(ex.kind) && isOptionKind(kind)) return finishKindSwitch({ ...ex, kind });
+  if (kind === 'material') {
+    return finishKindSwitch({
+      ...ex,
+      kind,
+      options: [],
+      answer: '',
+      analysis: '',
+      children: [],
+    });
+  }
+  if (ex.kind === 'material') {
+    return finishKindSwitch({
+      ...ex,
+      kind,
+      options: isOptionKind(kind) ? emptyChoiceOptions(DEFAULT_CHOICE_OPTIONS) : [],
+      answer: '',
+      analysis: '',
+      children: [],
+    });
+  }
+  return finishKindSwitch({
+    ...ex,
+    kind,
+    options: isOptionKind(kind) ? emptyChoiceOptions(DEFAULT_CHOICE_OPTIONS) : [],
+  });
 }
 
 /** 保存前校验模块名，并去掉纯空要点/纯空模块条目 */
@@ -399,14 +968,6 @@ export function validateAndSanitizeKnowledgeCard(
   };
 }
 
-function stepHasContent(st: KnowledgeCardExamStep) {
-  return !isBlank(st.title) || !isBlank(st.detail);
-}
-
-function tipHasContent(tip: KnowledgeCardExamTip) {
-  return !isBlank(tip.content);
-}
-
 function FieldReqTag({ required }: { required: boolean }) {
   return required ? (
     <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium bg-rose-50 text-rose-400 border border-rose-100 leading-none">
@@ -429,7 +990,6 @@ const TITLE_INPUT_CLASS = {
     'w-full text-[15px] font-semibold text-gray-900 placeholder:font-normal placeholder:text-gray-400 border border-slate-200/80 rounded-lg px-3 py-2.5 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:bg-white',
 };
 
-const TITLE_VIEW_CLASS = 'text-[15px] font-semibold text-gray-900 leading-snug';
 const BODY_VIEW_CLASS = 'text-sm text-gray-700 leading-relaxed whitespace-pre-wrap';
 const BODY_WELL_CLASS = 'rounded-lg bg-slate-50 border border-slate-100 px-3 py-2.5';
 
@@ -444,10 +1004,12 @@ function ToolbarIconBtn({
   title,
   children,
   className = '',
+  onClick,
 }: {
   title: string;
   children: React.ReactNode;
   className?: string;
+  onClick?: () => void;
 }) {
   return (
     <button
@@ -455,6 +1017,7 @@ function ToolbarIconBtn({
       title={title}
       tabIndex={-1}
       onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
       className={`inline-flex items-center justify-center h-7 min-w-7 px-1 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors ${className}`}
     >
       {children}
@@ -464,6 +1027,36 @@ function ToolbarIconBtn({
 
 function ToolbarDivider() {
   return <span className="w-px h-4 bg-gray-200 mx-0.5 flex-shrink-0" aria-hidden />;
+}
+
+const RichEditorFocusContext = React.createContext<(() => void) | null>(null);
+
+/** 内容超出默认高度时把输入框撑高，避免在框内出现滚动条。 */
+function fitTextarea(el: HTMLTextAreaElement) {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+function useFitTextarea(value: string) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) fitTextarea(el);
+  }, [value]);
+  useEffect(() => {
+    const el = ref.current;
+    const parent = el?.parentElement;
+    if (!el || !parent || typeof ResizeObserver === 'undefined') return;
+    let width = parent.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (parent.clientWidth === width) return;
+      width = parent.clientWidth;
+      fitTextarea(el);
+    });
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, []);
+  return ref;
 }
 
 function KeyPointRichInput({
@@ -477,6 +1070,9 @@ function KeyPointRichInput({
   placeholder = '请输入...',
   rows = 3,
   compact = false,
+  line = false,
+  twoLine = false,
+  footer,
 }: {
   fieldId: string;
   value: string;
@@ -488,8 +1084,24 @@ function KeyPointRichInput({
   placeholder?: string;
   rows?: number;
   compact?: boolean;
+  /** 默认只留一行正文，聚焦后工具栏加在这一行上面。 */
+  line?: boolean;
+  /** 默认两行正文，超出后随内容变高。 */
+  twoLine?: boolean;
+  footer?: React.ReactNode;
 }) {
   const [focused, setFocused] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const textareaRef = useFitTextarea(value);
+  const hasBlanks = countBlanks(value) > 0;
+  const showBlankLine = hasBlanks && !composing;
+  const bodyClass = line
+    ? 'leading-6 py-1.5 min-h-6'
+    : twoLine
+      ? 'leading-relaxed py-2.5 min-h-[calc(3.25em+1.25rem)]'
+      : compact
+        ? 'font-semibold py-1.5 min-h-[40px] leading-snug'
+        : 'leading-relaxed py-2.5 min-h-[72px]';
   const focusRing =
     tone === 'amber'
       ? 'focus-within:ring-amber-400/30 focus-within:border-amber-400'
@@ -497,9 +1109,16 @@ function KeyPointRichInput({
         ? 'focus-within:ring-emerald-500/30 focus-within:border-emerald-400'
         : 'focus-within:ring-teal-500/30 focus-within:border-teal-400';
   return (
+    <RichEditorFocusContext.Provider value={() => setFocused(true)}>
     <div
       className={`rounded-md border border-gray-200 bg-white overflow-hidden focus-within:ring-2 ${focusRing}`}
       {...(toolbarAnchorId ? { 'data-req-anchor': toolbarAnchorId } : {})}
+      onBlur={(e) => {
+        const next = e.relatedTarget as Node | null;
+        if (next && e.currentTarget.contains(next)) return;
+        setFocused(false);
+        fieldBlurHandlers.onBlur();
+      }}
     >
       {focused && (
         <div className="flex flex-wrap items-center gap-0.5 px-1.5 py-1 border-b border-gray-100 bg-white">
@@ -570,27 +1189,59 @@ function KeyPointRichInput({
         <ToolbarIconBtn title="图片">
           <ImageIcon className="w-3.5 h-3.5" />
         </ToolbarIconBtn>
+        <ToolbarIconBtn
+          title="挖空"
+          onClick={() => {
+            const el = textareaRef.current;
+            if (!el) return;
+            const cursor = el.selectionStart ?? value.length;
+            const inserted = insertBlankAt(value, cursor);
+            onChange(inserted.text);
+            requestAnimationFrame(() => {
+              el.focus();
+              el.setSelectionRange(inserted.cursor, inserted.cursor);
+            });
+          }}
+        >
+          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" aria-hidden>
+            <path d="M2.5 11.5h11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </ToolbarIconBtn>
         </div>
       )}
-      <textarea
-        data-card-field={fieldId}
-        value={value}
-        {...imeHandlers}
-        onFocus={() => setFocused(true)}
-        onBlur={() => {
-          setFocused(false);
-          fieldBlurHandlers.onBlur();
-        }}
-        onChange={(e) => onChange(e.target.value)}
-        rows={rows}
-        placeholder={placeholder}
-        className={`w-full text-sm text-gray-700 placeholder:text-gray-400 px-3 bg-white border-0 focus:outline-none ${
-          compact
-            ? 'font-semibold py-1.5 resize-none min-h-[40px] leading-snug'
-            : 'leading-relaxed py-2.5 resize-y min-h-[72px]'
-        }`}
-      />
+      <div className="relative">
+        {showBlankLine ? (
+          <div
+            aria-hidden
+            className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-3 text-sm text-gray-700 ${bodyClass}`}
+          >
+            <BlankText text={value} />
+          </div>
+        ) : null}
+        <textarea
+          ref={textareaRef}
+          data-card-field={fieldId}
+          value={value}
+          onCompositionStart={() => {
+            setComposing(true);
+            imeHandlers.onCompositionStart();
+          }}
+          onCompositionEnd={() => {
+            setComposing(false);
+            imeHandlers.onCompositionEnd();
+          }}
+          onFocus={() => setFocused(true)}
+          onChange={(e) => onChange(e.target.value)}
+          rows={line ? 1 : twoLine ? 2 : rows}
+          placeholder={placeholder}
+          className={`relative w-full overflow-hidden resize-none border-0 bg-transparent px-3 text-sm placeholder:text-gray-400 focus:outline-none ${bodyClass} ${
+            showBlankLine ? 'text-transparent caret-gray-800 selection:bg-teal-100' : 'text-gray-700'
+          }`}
+        />
+      </div>
+      {footer ? <div className="border-t border-gray-200 px-3 pb-2 pt-2 space-y-0.5">{footer}</div> : null}
     </div>
+    </RichEditorFocusContext.Provider>
   );
 }
 
@@ -760,9 +1411,42 @@ interface KnowledgeCardPanelProps {
   previewExamFrequencyLabel?: string;
   /** Skill4：右侧 PRD 面板定位知识卡片内部子 Tab / 弹窗 */
   prdCommand?: KnowledgeCardPrdCommand | null;
+  /** 刷新后恢复到这个知识点上次停留的子 Tab / 展开考点 */
+  restoreNodeId?: string;
+  restoreSubTab?: 'concept' | 'exam';
+  restoreExpandedExamIds?: string[];
+  onViewChange?: (subTab: 'concept' | 'exam', expandedExamIds: string[]) => void;
 }
 
-/** 按知识点记住核心概念 / 考点子 Tab，避免结构变更重挂载后跳回核心概念 */
+/** 有例题的考点默认展开。同一会话里手动收起后，仍记住当前展开状态。 */
+function defaultExpandedExamIds(
+  related: RelatedExamPoint[] | undefined,
+  cardValue?: KnowledgeCard | null,
+): Set<string> {
+  return new Set(
+    mergeCardExamPoints(related, normalizeKnowledgeCard(cardValue).examPoints)
+      .filter((ep) => examPointHasExample(ep))
+      .map((ep) => ep.id),
+  );
+}
+
+function resolveExpandedExamIds(
+  nodeId: string | undefined,
+  related: RelatedExamPoint[] | undefined,
+  cardValue: KnowledgeCard | undefined,
+  restoreNodeId?: string,
+  restoreExpandedExamIds?: string[],
+): Set<string> {
+  if (nodeId && expandedExamMemory.has(nodeId)) {
+    return new Set(expandedExamMemory.get(nodeId));
+  }
+  const next = defaultExpandedExamIds(related, cardValue);
+  if (nodeId && restoreNodeId === nodeId) {
+    for (const id of restoreExpandedExamIds || []) next.add(id);
+  }
+  if (nodeId) expandedExamMemory.set(nodeId, next);
+  return next;
+}
 const subTabMemory = new Map<string, CardSubTab>();
 /** 按知识点记住展开中的考点 id */
 const expandedExamMemory = new Map<string, Set<string>>();
@@ -778,10 +1462,19 @@ const KnowledgeCardPanel = React.memo(function KnowledgeCardPanel({
   previewAcademicRequirementLabel,
   previewExamFrequencyLabel,
   prdCommand,
+  restoreNodeId,
+  restoreSubTab,
+  restoreExpandedExamIds,
+  onViewChange,
 }: KnowledgeCardPanelProps) {
-  const [subTab, setSubTabState] = useState<CardSubTab>(() =>
-    nodeId ? (subTabMemory.get(nodeId) ?? 'concept') : 'concept'
-  );
+  const [subTab, setSubTabState] = useState<CardSubTab>(() => {
+    if (nodeId && subTabMemory.has(nodeId)) return subTabMemory.get(nodeId) ?? 'concept';
+    if (nodeId && restoreNodeId === nodeId && restoreSubTab) {
+      subTabMemory.set(nodeId, restoreSubTab);
+      return restoreSubTab;
+    }
+    return 'concept';
+  });
   const setSubTab = useCallback(
     (next: CardSubTab) => {
       if (nodeId) subTabMemory.set(nodeId, next);
@@ -790,8 +1483,8 @@ const KnowledgeCardPanel = React.memo(function KnowledgeCardPanel({
     [nodeId]
   );
 
-  const [expandedExamIds, setExpandedExamIds] = useState<Set<string>>(
-    () => (nodeId ? new Set(expandedExamMemory.get(nodeId) ?? []) : new Set())
+  const [expandedExamIds, setExpandedExamIds] = useState<Set<string>>(() =>
+    resolveExpandedExamIds(nodeId, relatedExamPoints, value, restoreNodeId, restoreExpandedExamIds),
   );
   const [lekePickForExamId, setLekePickForExamId] = useState<string | null>(null);
   const [tabletPreviewOpen, setTabletPreviewOpen] = useState(false);
@@ -808,7 +1501,9 @@ const KnowledgeCardPanel = React.memo(function KnowledgeCardPanel({
     if (prevNodeIdRef.current === nodeId) return;
     prevNodeIdRef.current = nodeId;
     setSubTabState(nodeId ? (subTabMemory.get(nodeId) ?? 'concept') : 'concept');
-    setExpandedExamIds(nodeId ? new Set(expandedExamMemory.get(nodeId) ?? []) : new Set());
+    setExpandedExamIds(
+      resolveExpandedExamIds(nodeId, relatedExamPoints, value, restoreNodeId, restoreExpandedExamIds),
+    );
     setLekePickForExamId(null);
     setDraft(normalizeKnowledgeCard(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when node switches
@@ -841,6 +1536,12 @@ const KnowledgeCardPanel = React.memo(function KnowledgeCardPanel({
   const requestFocus = useCallback((_id: string) => {
     /* 不自动聚焦，避免浏览器把滚动容器拽到输入框 */
   }, []);
+
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
+  useEffect(() => {
+    onViewChangeRef.current?.(subTab, [...expandedExamIds]);
+  }, [subTab, expandedExamIds]);
 
   const card = isEditing ? draft : normalizeKnowledgeCard(value);
   const displayExamPoints = mergeCardExamPoints(relatedExamPoints, card.examPoints);
@@ -936,19 +1637,7 @@ const KnowledgeCardPanel = React.memo(function KnowledgeCardPanel({
   );
 
   const applyBankQuestion = (examId: string, q: BankQuestion) => {
-    upsertExamPoint(examId, {
-      example: {
-        stem: q.stem,
-        source: q.source,
-        lekeQuestionId: q.id,
-        steps: q.steps.map((s) => ({
-          id: uid('st'),
-          title: s.title,
-          detail: s.detail,
-        })),
-        tips: q.tips.map((t) => ({ id: uid('tip'), content: t })),
-      },
-    });
+    upsertExamPoint(examId, { example: bankQuestionToExample(q) });
     setLekePickForExamId(null);
     expandExam(examId);
   };
@@ -960,31 +1649,14 @@ const KnowledgeCardPanel = React.memo(function KnowledgeCardPanel({
   const pickingHasContent = !!(pickingExam?.example && exampleHasContent(pickingExam.example));
 
   return (
-    <div className="relative bg-gradient-to-br from-emerald-50 to-white rounded-xl border border-emerald-200 p-5 [overflow-anchor:none]">
-      <div className="absolute top-2.5 right-2.5 z-20">
-        <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.tablet-preview">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label="平板预览"
-                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-emerald-700 hover:bg-emerald-100/80 hover:text-emerald-800 transition-colors"
-                onClick={() => setTabletPreviewOpen(true)}
-              >
-                <TabletSmartphone className="w-4 h-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" align="end" sideOffset={6}>
-              平板预览
-            </TooltipContent>
-          </Tooltip>
-        </span>
-      </div>
-      <div className="flex items-center justify-between mb-4 gap-3 pr-10">
+    <div className="relative rounded-xl border border-gray-200 bg-white [overflow-anchor:none]">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gradient-to-r from-emerald-50 to-white border-b border-emerald-100/80">
         <div className="flex items-center gap-2 min-w-0">
-          <FileText className="w-5 h-5 text-emerald-600 shrink-0" />
-          <h4 className="font-semibold text-gray-900">知识卡片</h4>
-          <span className="text-xs text-gray-500 bg-white/80 border border-emerald-100 rounded-full px-2 py-0.5 truncate req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.summary">
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-emerald-500 text-white shrink-0">
+            <FileText className="w-3.5 h-3.5" />
+          </span>
+          <h4 className="font-semibold text-gray-900 shrink-0">知识卡片</h4>
+          <span className="text-xs text-gray-400 truncate req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.summary">
             {summary}
           </span>
         </div>
@@ -994,20 +1666,20 @@ const KnowledgeCardPanel = React.memo(function KnowledgeCardPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="text-xs"
+              className="text-xs h-8"
               onClick={() => updateAndSync(sampleKnowledgeCard())}
             >
               填充示例数据
             </Button>
           )}
-          <div className="flex items-center gap-1 p-1 bg-white/70 border border-emerald-100 rounded-lg req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.subtabs">
+          <div className="flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.subtabs">
             <button
               type="button"
               onClick={() => setSubTab('concept')}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
                 subTab === 'concept'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-emerald-50'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
               }`}
             >
               核心概念
@@ -1015,17 +1687,29 @@ const KnowledgeCardPanel = React.memo(function KnowledgeCardPanel({
             <button
               type="button"
               onClick={() => setSubTab('exam')}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
                 subTab === 'exam'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-emerald-50'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
               }`}
             >
               考点
             </button>
           </div>
+          <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.tablet-preview">
+            <button
+              type="button"
+              aria-label="预览"
+              className="inline-flex items-center gap-1 h-8 px-3 rounded-lg border border-teal-200 bg-white text-teal-600 text-sm hover:bg-teal-50 transition-colors"
+              onClick={() => setTabletPreviewOpen(true)}
+            >
+              <Eye className="w-4 h-4" />
+              预览
+            </button>
+          </span>
         </div>
       </div>
+      <div className="p-4">
 
       {subTab === 'concept' ? (
         <ConceptPanel
@@ -1052,6 +1736,7 @@ const KnowledgeCardPanel = React.memo(function KnowledgeCardPanel({
           onGoMaintainExams={onGoMaintainExams}
         />
       )}
+      </div>
 
       <LekeQuestionPicker
         open={!!lekePickForExamId}
@@ -1631,52 +2316,62 @@ function ConceptPanel({
   );
 }
 
-const EXAM_PREVIEW_THEMES = [
-  {
-    card: 'border-emerald-200',
-    header: 'bg-emerald-100/80',
-    headerBorder: 'border-b border-emerald-200/80',
-    desc: 'bg-emerald-50',
-    descBorder: 'border-b border-emerald-100',
-    title: 'text-emerald-900',
-    label: 'text-emerald-700',
-    icon: 'text-emerald-600',
-  },
-  {
-    card: 'border-sky-200',
-    header: 'bg-sky-100/80',
-    headerBorder: 'border-b border-sky-200/80',
-    desc: 'bg-sky-50',
-    descBorder: 'border-b border-sky-100',
-    title: 'text-sky-900',
-    label: 'text-sky-700',
-    icon: 'text-sky-600',
-  },
-  {
-    card: 'border-amber-200',
-    header: 'bg-amber-100/80',
-    headerBorder: 'border-b border-amber-200/80',
-    desc: 'bg-amber-50',
-    descBorder: 'border-b border-amber-100',
-    title: 'text-amber-900',
-    label: 'text-amber-700',
-    icon: 'text-amber-600',
-  },
-];
-
-function OrangeDiamond() {
-  return <span className="inline-block w-2 h-2 rotate-45 bg-orange-400 flex-shrink-0" />;
-}
-
 function ExamTypeTag({ type }: { type?: KnowledgeCardExamType }) {
   const meta = examTypeMeta(type);
   if (!meta) return null;
   return (
-    <span
-      className={`inline-flex items-center h-5 px-2 rounded-md text-[11px] font-semibold border leading-none flex-shrink-0 ${meta.tagClass}`}
-    >
+    <span className="inline-flex items-center h-5 px-1.5 rounded text-[11px] leading-none flex-shrink-0 bg-gray-100 text-gray-500">
       {meta.label}
     </span>
+  );
+}
+
+function ExamIndexBadge({ index }: { index: number }) {
+  return (
+    <span className="w-5 h-5 rounded-md bg-teal-500 text-white text-[11px] font-semibold inline-flex items-center justify-center shrink-0">
+      {index + 1}
+    </span>
+  );
+}
+
+function ExamExampleStatus({
+  hasExample,
+  expanded,
+}: {
+  hasExample: boolean;
+  expanded: boolean;
+}) {
+  return (
+    <span
+      className={`ml-auto inline-flex items-center gap-0.5 text-xs shrink-0 ${
+        hasExample ? 'text-teal-600' : 'text-gray-400'
+      }`}
+    >
+      {hasExample ? '有例题' : '无例题'}
+      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+    </span>
+  );
+}
+
+function ExamListSection({
+  title,
+  count,
+  children,
+  anchor,
+}: {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+  anchor?: string;
+}) {
+  return (
+    <section className="rounded-xl bg-gray-50 px-3 py-3" {...(anchor ? { 'data-req-anchor': anchor } : {})}>
+      <div className="flex items-center gap-2 px-1 pb-2.5">
+        <span className="text-sm font-medium text-gray-800">{title}</span>
+        <span className="text-xs text-gray-400">{count}条</span>
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -1693,52 +2388,29 @@ function ExamPointPreview({
   onToggle: () => void;
   isAnchorHost?: boolean;
 }) {
-  const theme = EXAM_PREVIEW_THEMES[index % EXAM_PREVIEW_THEMES.length];
-  const hasStem = !isBlank(ep.example?.stem);
-  const steps = ep.example?.steps ?? [];
-  const tips = ep.example?.tips ?? [];
-  const hasBody = !!ep.description || hasStem;
-
   return (
     <div
-      className={`rounded-2xl border ${theme.card} overflow-hidden bg-white`}
+      className="rounded-lg border border-gray-200 overflow-hidden bg-white"
       {...(isAnchorHost ? { 'data-req-anchor': 'knowledge-tree.knowledge-card.exam-list' } : {})}
     >
       <button
         type="button"
-        className={`${theme.header} ${theme.headerBorder} w-full px-4 py-2.5 flex items-center gap-2 text-left`}
+        className="w-full px-3 py-2.5 flex items-center gap-2.5 text-left bg-white"
         onClick={onToggle}
       >
-        <BookOpen className={`w-4 h-4 ${theme.icon} flex-shrink-0`} />
-        <span className={`text-[15px] font-semibold ${theme.title} min-w-0 truncate`}>
+        <ExamIndexBadge index={index} />
+        <span className="text-sm font-semibold text-gray-900 min-w-0 truncate">
           {ep.title || '未命名考点'}
         </span>
         <ExamTypeTag type={ep.examType} />
-        {examPointHasExample(ep) ? (
-          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-white/80 text-emerald-700 border border-emerald-200 flex-shrink-0">
-            有例题
-          </span>
-        ) : (
-          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-white/60 text-gray-400 border border-gray-200 flex-shrink-0">
-            无例题
-          </span>
-        )}
-        <span className="w-4 h-4 flex-shrink-0 inline-flex items-center justify-center">
-          {hasBody ? (
-            expanded ? (
-              <ChevronUp className={`w-4 h-4 ${theme.icon}`} />
-            ) : (
-              <ChevronDown className={`w-4 h-4 ${theme.icon}`} />
-            )
-          ) : null}
-        </span>
+        <ExamExampleStatus hasExample={examPointHasExample(ep)} expanded={expanded} />
       </button>
 
       {expanded && (
         <>
           {ep.description ? (
             <div
-              className={`${theme.desc} ${theme.descBorder} px-4 py-3`}
+              className="px-3 py-3 border-t border-gray-100 bg-gray-50/60"
               {...(isAnchorHost ? { 'data-req-anchor': 'knowledge-tree.knowledge-card.exam-desc' } : {})}
             >
               <div className={`${FIELD_LABEL_CLASS} mb-1.5`}>考点说明</div>
@@ -1746,74 +2418,20 @@ function ExamPointPreview({
             </div>
           ) : null}
 
-          {hasStem && ep.example && (
+          {ep.example && examPointHasExample(ep) && (
             <div
               className="m-3 rounded-xl border border-teal-100 bg-white p-3 space-y-3"
               {...(isAnchorHost ? { 'data-req-anchor': 'knowledge-tree.knowledge-card.example' } : {})}
             >
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-700">
-                典型例题
-              </span>
-              <div>
-                <div className={`${FIELD_LABEL_CLASS} mb-1.5`}>题干</div>
-                <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS}`}>{ep.example.stem}</div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-800">典型例题</span>
+                {exampleKindLabel(ep.example.kind) ? (
+                  <span className="inline-flex items-center h-7 px-2.5 rounded-md border border-teal-300 bg-teal-50 text-[13px] font-semibold text-teal-800">
+                    {exampleKindLabel(ep.example.kind)}
+                  </span>
+                ) : null}
               </div>
-
-              {steps.length > 0 && (
-                <div
-                  className="pt-2 border-t border-dashed border-gray-200"
-                  {...(isAnchorHost ? { 'data-req-anchor': 'knowledge-tree.knowledge-card.steps-tips' } : {})}
-                >
-                  <div className="flex items-center gap-1.5 text-orange-500 font-semibold text-sm mb-2">
-                    <OrangeDiamond />
-                    解题步骤
-                  </div>
-                  <ol className="space-y-3">
-                    {steps.map((st, i) => (
-                      <li
-                        key={st.id}
-                        className="border-l-[4px] border-amber-400 pl-3"
-                      >
-                        <div className={TITLE_VIEW_CLASS}>
-                          <span className="mr-1 text-amber-600">{i + 1}.</span>
-                          {st.title || ''}
-                        </div>
-                        {st.detail ? (
-                          <div className={`mt-1.5 ${BODY_WELL_CLASS} ${BODY_VIEW_CLASS}`}>
-                            {st.detail}
-                          </div>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
-
-              {tips.length > 0 && (
-                <div
-                  className="rounded-xl bg-amber-50 border border-amber-100/80 p-3"
-                  {...(isAnchorHost && steps.length === 0
-                    ? { 'data-req-anchor': 'knowledge-tree.knowledge-card.steps-tips' }
-                    : {})}
-                >
-                  <div className="flex items-center gap-1.5 text-orange-500 font-semibold text-sm mb-2">
-                    <OrangeDiamond />
-                    解题要点
-                  </div>
-                  <div className="space-y-2">
-                    {tips.map((tip, i) => (
-                      <div key={tip.id} className="flex gap-2 items-start">
-                        <span className="mt-0.5 w-5 h-5 rounded-full bg-orange-400 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
-                          {i + 1}
-                        </span>
-                        <div className={`flex-1 ${BODY_WELL_CLASS} bg-white/80 ${BODY_VIEW_CLASS}`}>
-                          {tip.content}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <TypicalExampleReadout example={ep.example} revealAnswer anchorHost={isAnchorHost} />
             </div>
           )}
         </>
@@ -1858,25 +2476,13 @@ function KnowledgeTipsBlock({
   };
 
   return (
-    <section
-      className="rounded-xl border border-amber-200 overflow-hidden bg-white shadow-sm"
-      data-req-anchor="knowledge-tree.knowledge-card.knowledge-tips"
-    >
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-amber-50 border-b border-amber-200">
-        <OrangeDiamond />
-        <span className="text-sm font-semibold text-amber-900">知识点Tips</span>
-        <span className="text-xs text-amber-700/70">
-          {isEditing ? list.length : filled.length}条
-        </span>
-      </div>
-
-      <div className="p-3 space-y-2 bg-amber-50/30">
+    <ExamListSection title="知识点Tips" count={filled.length} anchor="knowledge-tree.knowledge-card.knowledge-tips">
       {isEditing ? (
-        <>
+        <div className="space-y-2">
           {list.map((tip, index) => (
-            <div key={tip.id} className="flex items-start gap-2 bg-white rounded-lg border border-amber-100 p-3">
+            <div key={tip.id} className="flex items-start gap-2 bg-white rounded-lg border border-gray-200 px-3 py-2.5">
               {showIndex && (
-                <span className="mt-1.5 w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                <span className="mt-2 w-5 h-5 rounded-full bg-gray-100 text-gray-400 text-[11px] font-medium flex items-center justify-center flex-shrink-0">
                   {index + 1}
                 </span>
               )}
@@ -1889,7 +2495,8 @@ function KnowledgeTipsBlock({
                       ? KNOWLEDGE_TIPS_EMPTY_HINT
                       : '请输入知识点Tips'
                   }
-                  tone="amber"
+                  tone="teal"
+                  rows={2}
                   imeHandlers={imeHandlers}
                   fieldBlurHandlers={fieldBlurHandlers}
                   onChange={(content) => {
@@ -1897,36 +2504,16 @@ function KnowledgeTipsBlock({
                   }}
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                {showIndex && (
-                  <>
-                    <button
-                      type="button"
-                      className="p-1 rounded hover:bg-amber-100 text-gray-400 disabled:opacity-30"
-                      disabled={index === 0}
-                      onClick={() => onChange(moveItem(list, index, -1))}
-                    >
-                      <ArrowUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      className="p-1 rounded hover:bg-amber-100 text-gray-400 disabled:opacity-30"
-                      disabled={index === list.length - 1}
-                      onClick={() => onChange(moveItem(list, index, 1))}
-                    >
-                      <ArrowDown className="w-3.5 h-3.5" />
-                    </button>
-                    <DeleteIconButton
-                      hasContent={!isBlank(tip.content)}
-                      label="该知识点Tips"
-                      onConfirm={() => removeTip(tip.id)}
-                    />
-                  </>
-                )}
-              </div>
+              {showIndex && (
+                <DeleteIconButton
+                  hasContent={!isBlank(tip.content)}
+                  label="该知识点Tips"
+                  onConfirm={() => removeTip(tip.id)}
+                />
+              )}
             </div>
           ))}
-          <AddActionButton tone="orange" onClick={addTip}>
+          <AddActionButton tone="teal" onClick={addTip}>
             <span
               className="req-anchor-inline"
               data-req-anchor="knowledge-tree.knowledge-card.add-knowledge-tip"
@@ -1934,29 +2521,26 @@ function KnowledgeTipsBlock({
               添加Tips
             </span>
           </AddActionButton>
-        </>
+        </div>
       ) : filled.length > 0 ? (
         <div className="space-y-2">
           {filled.map((tip, index) => (
-            <div key={tip.id} className="flex items-start gap-2 bg-white rounded-lg border border-amber-100 p-3">
-              {filled.length > 1 && (
-                <span className="mt-1.5 w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
-                  {index + 1}
-                </span>
-              )}
-              <div className={`flex-1 ${BODY_WELL_CLASS} bg-white ${BODY_VIEW_CLASS}`}>
+            <div key={tip.id} className="flex items-center gap-3 bg-white rounded-lg border border-gray-200 px-3 py-2.5">
+              <span className="w-5 h-5 rounded-full bg-gray-100 text-gray-400 text-[11px] font-medium flex items-center justify-center flex-shrink-0">
+                {index + 1}
+              </span>
+              <div className="flex-1 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
                 {tip.content}
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="rounded-lg border border-dashed border-amber-200 bg-white/80 px-3 py-3 text-sm text-gray-400 leading-relaxed">
+        <div className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-3 text-sm text-gray-400 leading-relaxed">
           {KNOWLEDGE_TIPS_EMPTY_HINT}
         </div>
       )}
-      </div>
-    </section>
+    </ExamListSection>
   );
 }
 
@@ -1995,17 +2579,10 @@ function ExamPanel({
     />
   );
 
-  const examColors = [
-    'border-emerald-200 bg-emerald-50/50',
-    'border-sky-200 bg-sky-50/50',
-    'border-amber-200 bg-amber-50/50',
-    'border-violet-200 bg-violet-50/50',
-  ];
-
   const examListBody =
     examPoints.length === 0 ? (
       <div
-        className="rounded-lg border border-dashed border-emerald-200 bg-white/80 px-3 py-4 text-center"
+        className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-4 text-center"
         data-req-anchor="knowledge-tree.knowledge-card.exam-empty"
       >
         <p className="text-sm text-gray-600">暂无考点</p>
@@ -2014,14 +2591,14 @@ function ExamPanel({
           <button
             type="button"
             onClick={onGoMaintainExams}
-            className="mt-3 inline-flex items-center justify-center h-8 px-3 rounded-lg border border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50 text-sm font-medium transition-colors"
+            className="mt-3 inline-flex items-center justify-center h-8 px-3 rounded-lg border border-teal-200 text-teal-700 bg-teal-50/40 hover:bg-teal-50 text-sm font-medium transition-colors"
           >
             去维护考点
           </button>
         )}
       </div>
     ) : !isEditing ? (
-      <div className="space-y-3" data-req-anchor="knowledge-tree.knowledge-card.exam-list">
+      <div className="space-y-2" data-req-anchor="knowledge-tree.knowledge-card.exam-list">
         {examPoints.map((ep, index) => (
           <ExamPointPreview
             key={ep.id}
@@ -2034,48 +2611,29 @@ function ExamPanel({
         ))}
       </div>
     ) : (
-      <div className="space-y-3" data-req-anchor="knowledge-tree.knowledge-card.exam-list">
+      <div className="space-y-2" data-req-anchor="knowledge-tree.knowledge-card.exam-list">
         {examPoints.map((ep, index) => {
           const expanded = expandedExamIds.has(ep.id);
-          const color = examColors[index % examColors.length];
-          const typeMeta = examTypeMeta(ep.examType);
           return (
-            <div key={ep.id} className={`rounded-xl border ${color} overflow-hidden`}>
+            <div key={ep.id} className="rounded-lg border border-gray-200 overflow-hidden bg-white">
               <div className="flex items-center gap-2 px-3 py-2.5">
+                <GripVertical className="w-4 h-4 text-gray-300 shrink-0" />
                 <button
                   type="button"
-                  className="flex-1 flex items-center gap-2 text-left min-w-0"
+                  className="flex-1 flex items-center gap-2.5 text-left min-w-0"
                   onClick={() => onToggleExam(ep.id)}
                 >
-                  {expanded ? (
-                    <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                  )}
+                  <ExamIndexBadge index={index} />
                   <span className="text-sm font-semibold text-gray-900 truncate">
                     {ep.title || '未命名考点'}
                   </span>
-                  {typeMeta && (
-                    <span
-                      className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${typeMeta.tagClass}`}
-                    >
-                      {typeMeta.label}
-                    </span>
-                  )}
-                  {examPointHasExample(ep) ? (
-                    <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-white/80 text-emerald-700 border border-emerald-200 flex-shrink-0">
-                      有例题
-                    </span>
-                  ) : (
-                    <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-white/60 text-gray-400 border border-gray-200 flex-shrink-0">
-                      无例题
-                    </span>
-                  )}
+                  <ExamTypeTag type={ep.examType} />
+                  <ExamExampleStatus hasExample={examPointHasExample(ep)} expanded={expanded} />
                 </button>
               </div>
 
               {expanded && (
-                <div className="px-3 pt-3 pb-3 space-y-4 border-t border-white/60 bg-white">
+                <div className="px-3 pt-3 pb-3 space-y-4 border-t border-gray-100 bg-white">
                   <FieldBlock
                     label="考点说明"
                     reqAnchor={index === 0 ? 'knowledge-tree.knowledge-card.exam-desc' : undefined}
@@ -2085,6 +2643,7 @@ function ExamPanel({
                       value={ep.description || ''}
                       placeholder="不填写，则学生端考点说明处则显示【暂无】"
                       tone="emerald"
+                      line
                       imeHandlers={imeHandlers}
                       fieldBlurHandlers={fieldBlurHandlers}
                       onChange={(description) => onUpsertExam(ep.id, { description })}
@@ -2092,14 +2651,7 @@ function ExamPanel({
                   </FieldBlock>
 
                   <ExampleEditor
-                    example={
-                      ep.example ?? {
-                        stem: '',
-                        source: 'manual' as const,
-                        steps: [],
-                        tips: [],
-                      }
-                    }
+                    example={ep.example ?? emptyExample()}
                     isEditing={isEditing}
                     isAnchorHost={index === 0}
                     onLocalChange={(example) => onUpsertExam(ep.id, { example })}
@@ -2124,15 +2676,456 @@ function ExamPanel({
     );
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-xl border border-emerald-200 overflow-hidden bg-white shadow-sm">
-        <div className="flex items-center gap-2 px-3 py-2.5 bg-emerald-50 border-b border-emerald-200">
-          <span className="text-sm font-semibold text-emerald-900">考点清单</span>
-          <span className="text-xs text-emerald-700/70">{examPoints.length}个</span>
-        </div>
-        <div className="p-3 bg-emerald-50/30">{examListBody}</div>
-      </section>
+    <div className="space-y-3">
+      <ExamListSection title="考点清单" count={examPoints.length}>
+        {examListBody}
+      </ExamListSection>
       {tipsBlock}
+    </div>
+  );
+}
+
+const ORDINARY_QUESTION_KINDS = EXAMPLE_QUESTION_KINDS.filter((item) => item.id !== 'material');
+
+function OptionLines({ options, divided = true }: { options?: ExampleOption[]; divided?: boolean }) {
+  if (!options || options.length === 0) return null;
+  return (
+    <div className={`mt-2 space-y-1 ${divided ? 'border-t border-gray-200 pt-2' : ''}`}>
+      {options.map((opt) => (
+        <div key={opt.key} className="flex gap-2">
+          <span className="font-bold text-gray-900 shrink-0">{opt.key}.</span>
+          <span className="whitespace-pre-wrap">{opt.text.trim() || '暂无'}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OptionTextarea({
+  value,
+  imeHandlers,
+  onFocus,
+  onChange,
+}: {
+  value: string;
+  imeHandlers?: ImeHandlers;
+  onFocus: () => void;
+  onChange: (value: string) => void;
+}) {
+  const ref = useFitTextarea(value);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      rows={1}
+      placeholder="请输入..."
+      {...imeHandlers}
+      onFocus={onFocus}
+      onChange={(e) => onChange(e.target.value)}
+      className="flex-1 min-w-0 overflow-hidden resize-none border-0 bg-transparent py-1 text-sm leading-relaxed text-gray-700 placeholder:text-gray-400 focus:outline-none"
+    />
+  );
+}
+
+function ChoiceOptionsFields({
+  options,
+  editing,
+  imeHandlers,
+  onChange,
+}: {
+  options: ExampleOption[];
+  editing: boolean;
+  imeHandlers?: ImeHandlers;
+  onChange: (options: ExampleOption[], structural: boolean) => void;
+}) {
+  const rows = normalizeOptions(options);
+  const canAdd = rows.length < OPTION_KEYS.length;
+  const canDelete = rows.length > MIN_CHOICE_OPTIONS;
+  const focusEditor = React.useContext(RichEditorFocusContext);
+
+  return (
+    <div>
+      {rows.map((opt, index) => (
+        <div key={opt.key} className="flex items-start gap-1">
+          <span className="w-6 shrink-0 pt-1 text-sm font-bold leading-relaxed text-gray-900">{opt.key}.</span>
+          {editing ? (
+            <OptionTextarea
+              value={opt.text}
+              imeHandlers={imeHandlers}
+              onFocus={() => focusEditor?.()}
+              onChange={(text) => {
+                const next = rows.map((item, itemIndex) =>
+                  itemIndex === index ? { ...item, text } : item
+                );
+                onChange(next, false);
+              }}
+            />
+          ) : (
+            <span className={`flex-1 min-w-0 py-1 ${BODY_VIEW_CLASS}`}>{opt.text.trim() || '暂无'}</span>
+          )}
+          {editing && canDelete ? (
+            <DeleteIconButton
+              hasContent={!isBlank(opt.text)}
+              label={`${opt.key} 选项`}
+              className="mt-1 p-1 text-red-400"
+              iconClassName="w-3.5 h-3.5"
+              onConfirm={() => onChange(normalizeOptions(rows.filter((_, itemIndex) => itemIndex !== index)), true)}
+            />
+          ) : null}
+        </div>
+      ))}
+      {editing && canAdd ? (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 py-1 text-xs text-emerald-700 hover:underline"
+          onClick={() => onChange(normalizeOptions([...rows, { key: '', text: '' }]), true)}
+        >
+          <Plus className="w-3 h-3" />
+          添加选项
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function BlankAnswerFields({
+  answers,
+  editing,
+  onChange,
+}: {
+  answers: string[];
+  editing: boolean;
+  onChange: (answers: string[]) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className={FIELD_LABEL_CLASS}>答案</div>
+      <div className="space-y-2">
+        {answers.map((item, index) => (
+          <div key={index} className="flex items-start gap-2">
+            <span className="mt-1 w-5 shrink-0 text-center text-sm leading-6 text-gray-500">{circledNumber(index)}</span>
+            {editing ? (
+              <BlankAnswerInput
+                value={item}
+                onChange={(next) => onChange(answers.map((answer, answerIndex) => (answerIndex === index ? next : answer)))}
+              />
+            ) : (
+              <span className={`min-h-6 flex-1 border-b border-gray-200 py-1 ${BODY_VIEW_CLASS}`}>
+                {item.trim() ? item : '暂无'}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BlankAnswerInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const ref = useFitTextarea(value);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      rows={1}
+      placeholder="请输入..."
+      onChange={(e) => onChange(e.target.value)}
+      className="min-h-6 w-full flex-1 resize-none overflow-hidden border-0 border-b border-gray-200 bg-transparent py-1 text-sm leading-6 text-gray-800 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+    />
+  );
+}
+
+function ExampleField({
+  label,
+  value,
+  editing,
+  fieldId,
+  placeholder,
+  anchor,
+  imeHandlers,
+  fieldBlurHandlers,
+  onChange,
+  footer,
+}: {
+  label: string;
+  value: string;
+  editing: boolean;
+  fieldId: string;
+  placeholder: string;
+  anchor?: string;
+  imeHandlers: ImeHandlers;
+  fieldBlurHandlers: FieldBlurHandlers;
+  onChange: (value: string) => void;
+  footer?: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5" {...(anchor ? { 'data-req-anchor': anchor } : {})}>
+      <div className={FIELD_LABEL_CLASS}>{label}</div>
+      {editing ? (
+        <KeyPointRichInput
+          fieldId={fieldId}
+          value={value}
+          placeholder={placeholder}
+          tone="emerald"
+          rows={2}
+          line={label === '答案'}
+          twoLine={label === '题干'}
+          imeHandlers={imeHandlers}
+          fieldBlurHandlers={fieldBlurHandlers}
+          onChange={onChange}
+          footer={footer}
+        />
+      ) : (
+        <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS}`}>
+          {value.trim() ? value : '暂无'}
+          {footer}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PreviewSectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5 text-[13px] font-semibold text-gray-900">
+      <span className="h-3.5 w-1 rounded-full bg-emerald-500" />
+      {children}
+    </div>
+  );
+}
+
+function PreviewAnswerBody({
+  kind,
+  stem,
+  answer,
+  blankAnswers,
+}: {
+  kind: ExampleQuestionKind | ExampleSubQuestion['kind'];
+  stem: string;
+  answer: string;
+  blankAnswers?: string[];
+}) {
+  if (kind === 'blank' && countBlanks(stem) > 0) {
+    const answers = blankAnswers ?? alignBlankAnswers(answer, undefined, countBlanks(stem));
+    return (
+      <div className="space-y-1 text-[13px] leading-relaxed text-gray-800">
+        {answers.map((item, index) => (
+          <div key={circledNumber(index)} className="flex gap-2">
+            <span className="shrink-0 text-gray-500">{circledNumber(index)}</span>
+            <span className="whitespace-pre-wrap">{item.trim() || '暂无'}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-gray-800">
+      {answer.trim() || '暂无'}
+    </p>
+  );
+}
+
+function PreviewKindPrefix({
+  kind,
+  spaced = true,
+}: {
+  kind?: ExampleQuestionKind | null;
+  spaced?: boolean;
+}) {
+  const label = exampleKindLabel(kind);
+  if (!label) return null;
+  return <span className={`${spaced ? 'mr-1 ' : ''}font-bold text-black`}>【{label}】</span>;
+}
+
+export function TypicalExampleReadout({
+  example,
+  revealAnswer,
+  anchorHost,
+  variant = 'card',
+}: {
+  example: KnowledgeCardExample;
+  revealAnswer: boolean;
+  anchorHost?: boolean;
+  variant?: 'card' | 'preview';
+}) {
+  const childTypeScheme = useMaterialChildTypeScheme();
+  if (variant === 'preview') {
+    return (
+      <div className="space-y-3">
+        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-gray-800">
+          <PreviewKindPrefix kind={example.kind} />
+          {example.stem.trim() ? <BlankText text={example.stem} /> : '暂无'}
+          {isOptionKind(example.kind) ? <OptionLines options={normalizeOptions(example.options)} divided={false} /> : null}
+        </div>
+        {example.kind === 'material'
+          ? example.children.map((child, index) => (
+              <div key={child.id} className="border-t border-gray-100 pt-2">
+                <div className="flex items-baseline text-[13px] leading-relaxed text-gray-800">
+                  <span className="shrink-0 font-normal">（{index + 1}）</span>
+                  <div className="min-w-0">
+                    <div className="whitespace-pre-wrap">
+                      {materialChildTypeText(
+                        exampleKindLabel(child.kind),
+                        childTypeScheme,
+                        child.kind === 'multiple'
+                      )}
+                      {child.stem.trim() ? <BlankText text={child.stem} /> : '暂无'}
+                    </div>
+                    {isOptionKind(child.kind) ? (
+                      <OptionLines options={normalizeOptions(child.options)} divided={false} />
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ))
+          : null}
+        {revealAnswer && example.kind === 'material' ? (
+          <>
+            <PreviewSectionTitle>答案</PreviewSectionTitle>
+            <div className="space-y-1.5">
+              {example.children.map((child, index) => (
+                <div key={`${child.id}-answer`} className="flex items-start text-[13px] leading-relaxed text-gray-800">
+                  <span className="shrink-0 font-normal">（{index + 1}）</span>
+                  <div className="min-w-0 flex-1">
+                    <PreviewAnswerBody
+                      kind={child.kind}
+                      stem={child.stem}
+                      answer={child.answer}
+                      blankAnswers={child.blankAnswers}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <PreviewSectionTitle>解析</PreviewSectionTitle>
+            <div className="space-y-1.5">
+              {example.children.map((child, index) => (
+                <div key={`${child.id}-analysis`} className="flex items-start text-[13px] leading-relaxed text-gray-800">
+                  <span className="shrink-0 font-normal">（{index + 1}）</span>
+                  <p className="min-w-0 flex-1 whitespace-pre-wrap">{child.analysis.trim() || '暂无'}</p>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
+        {revealAnswer && example.kind !== 'material' ? (
+          <>
+            <PreviewSectionTitle>答案</PreviewSectionTitle>
+            <PreviewAnswerBody
+              kind={example.kind || 'qa'}
+              stem={example.stem}
+              answer={example.answer}
+              blankAnswers={example.blankAnswers}
+            />
+            <PreviewSectionTitle>解析</PreviewSectionTitle>
+            <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-gray-800">
+              {example.analysis.trim() || '暂无'}
+            </p>
+          </>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (example.kind === 'material') {
+    return (
+      <div className="space-y-3">
+        <div {...(anchorHost ? { className: 'req-anchor-host', 'data-req-anchor': 'knowledge-tree.knowledge-card.example-stem' } : {})}>
+          <div className={`${FIELD_LABEL_CLASS} mb-1.5`}>题干</div>
+          <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS} whitespace-pre-wrap`}>
+            {example.stem.trim() ? <BlankText text={example.stem} /> : '暂无'}
+          </div>
+        </div>
+        {example.children.map((child, index) => (
+          <div key={child.id} className="rounded-lg border border-gray-100 bg-gray-50/80 p-2.5 space-y-2">
+            <div className="text-[12px] font-medium text-gray-500">
+              （{index + 1}） · {exampleKindLabel(child.kind)}
+            </div>
+            <div className={`${BODY_WELL_CLASS} bg-white ${BODY_VIEW_CLASS} whitespace-pre-wrap`}>
+              {child.stem.trim() ? <BlankText text={child.stem} /> : '暂无'}
+              {isOptionKind(child.kind) ? <OptionLines options={normalizeOptions(child.options)} /> : null}
+            </div>
+            {revealAnswer ? (
+              <>
+                {child.kind === 'blank' && countBlanks(child.stem) > 0 ? (
+                  <BlankAnswerFields
+                    answers={child.blankAnswers ?? alignBlankAnswers(child.answer, undefined, countBlanks(child.stem))}
+                    editing={false}
+                    onChange={() => {}}
+                  />
+                ) : (
+                <ExampleField
+                  label="答案"
+                  value={child.answer}
+                  editing={false}
+                  fieldId={`${child.id}-answer`}
+                  placeholder=""
+                  anchor={anchorHost && index === 0 ? 'knowledge-tree.knowledge-card.steps-tips' : undefined}
+                  imeHandlers={{ onCompositionStart: () => {}, onCompositionEnd: () => {} }}
+                  fieldBlurHandlers={{ onBlur: () => {} }}
+                  onChange={() => {}}
+                />
+                )}
+                <ExampleField
+                  label="解析"
+                  value={child.analysis}
+                  editing={false}
+                  fieldId={`${child.id}-analysis`}
+                  placeholder=""
+                  imeHandlers={{ onCompositionStart: () => {}, onCompositionEnd: () => {} }}
+                  fieldBlurHandlers={{ onBlur: () => {} }}
+                  onChange={() => {}}
+                />
+              </>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div {...(anchorHost ? { className: 'req-anchor-host', 'data-req-anchor': 'knowledge-tree.knowledge-card.example-stem' } : {})}>
+        <div className={`${FIELD_LABEL_CLASS} mb-1.5`}>题干</div>
+        <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS} whitespace-pre-wrap`}>
+          {example.stem.trim() ? <BlankText text={example.stem} /> : '暂无'}
+          {isOptionKind(example.kind) ? <OptionLines options={normalizeOptions(example.options)} /> : null}
+        </div>
+      </div>
+      {revealAnswer ? (
+        <>
+          {example.kind === 'blank' && countBlanks(example.stem) > 0 ? (
+            <BlankAnswerFields
+              answers={example.blankAnswers ?? alignBlankAnswers(example.answer, undefined, countBlanks(example.stem))}
+              editing={false}
+              onChange={() => {}}
+            />
+          ) : (
+          <ExampleField
+            label="答案"
+            value={example.answer}
+            editing={false}
+            fieldId="read-answer"
+            placeholder=""
+            anchor={anchorHost ? 'knowledge-tree.knowledge-card.steps-tips' : undefined}
+            imeHandlers={{ onCompositionStart: () => {}, onCompositionEnd: () => {} }}
+            fieldBlurHandlers={{ onBlur: () => {} }}
+            onChange={() => {}}
+          />
+          )}
+          <ExampleField
+            label="解析"
+            value={example.analysis}
+            editing={false}
+            fieldId="read-analysis"
+            placeholder=""
+            imeHandlers={{ onCompositionStart: () => {}, onCompositionEnd: () => {} }}
+            fieldBlurHandlers={{ onBlur: () => {} }}
+            onChange={() => {}}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -2162,154 +3155,243 @@ function ExampleEditor({
   isAnchorHost?: boolean;
   stemFieldId?: string;
 }) {
-  const hasStem = !isBlank(example.stem);
-  const showStepsAndTips = hasStem;
+  const editText = (next: KnowledgeCardExample) => onLocalChange(commitExampleChange(example, next));
+  const editStruct = (next: KnowledgeCardExample) => onStructChange(commitExampleChange(example, next));
+  const canClear = !!onClear && exampleHasContent(example);
+  const [pendingKind, setPendingKind] = useState<
+    | { scope: 'example'; kind: ExampleQuestionKind }
+    | { scope: 'child'; id: string; kind: ExampleSubQuestion['kind'] }
+    | null
+  >(null);
+
+  const applyExampleKind = (nextKind: ExampleQuestionKind) => {
+    editStruct(withExampleKind(example, nextKind));
+  };
+
+  const changeKind = (value: string) => {
+    const nextKind = value as ExampleQuestionKind;
+    if (!nextKind || nextKind === example.kind) return;
+    if (example.kind && exampleHasWritableContent(example)) {
+      setPendingKind({ scope: 'example', kind: nextKind });
+      return;
+    }
+    applyExampleKind(nextKind);
+  };
+
+  const applyChildKind = (child: ExampleSubQuestion, nextKind: ExampleSubQuestion['kind']) => {
+    updateChild(child.id, withSubQuestionKind(child, nextKind), true);
+  };
+
+  const requestChildKind = (child: ExampleSubQuestion, value: string) => {
+    const nextKind = value as ExampleSubQuestion['kind'];
+    if (!nextKind || nextKind === child.kind) return;
+    if (subQuestionHasContent(child)) {
+      setPendingKind({ scope: 'child', id: child.id, kind: nextKind });
+      return;
+    }
+    applyChildKind(child, nextKind);
+  };
+
+  const confirmKindSwitch = () => {
+    if (!pendingKind) return;
+    if (pendingKind.scope === 'example') {
+      applyExampleKind(pendingKind.kind);
+    } else {
+      const child = example.children.find((item) => item.id === pendingKind.id);
+      if (child && pendingKind.kind !== 'material') {
+        applyChildKind(child, pendingKind.kind);
+      }
+    }
+    setPendingKind(null);
+  };
+
+  const updateChild = (id: string, patch: Partial<ExampleSubQuestion>, structural = false) => {
+    const children = example.children.map((child) => (child.id === id ? { ...child, ...patch } : child));
+    const next = { ...example, children };
+    if (structural) editStruct(next);
+    else editText(next);
+  };
 
   return (
     <div
-      className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-4"
+      className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3"
       {...(isAnchorHost ? { 'data-req-anchor': 'knowledge-tree.knowledge-card.example' } : {})}
     >
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-teal-100 text-teal-700">
-        典型例题
-      </span>
-      <FieldBlock
-        label="题干"
-        extra={
-          <div className="flex items-center gap-1">
-            {isEditing && onClear && hasStem && (
-              <DeleteIconButton
-                hasContent={exampleHasContent(example)}
-                label="该例题"
-                onConfirm={onClear}
-              />
-            )}
-            {isEditing && (
-              <span
-                className="req-anchor-inline"
-                data-req-anchor="knowledge-tree.knowledge-card.system-select"
-              >
-                <button
-                  type="button"
-                  className="text-[11px] text-blue-600 hover:underline inline-flex items-center gap-0.5"
-                  onClick={onPullLeke}
-                >
-                  <Link2 className="w-3 h-3" />
-                  系统选择
-                </button>
-              </span>
-            )}
-          </div>
-        }
-      >
-        {isEditing ? (
-          <KeyPointRichInput
-            fieldId={stemFieldId || 'example-stem'}
-            value={example.stem}
-            placeholder="不填写，则学生端典型例题处则显示【暂无】"
-            tone="emerald"
-            imeHandlers={imeHandlers}
-            fieldBlurHandlers={fieldBlurHandlers}
-            onChange={(stem) => onLocalChange({ ...example, stem })}
-          />
-        ) : (
-          <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS}`}>{example.stem}</div>
-        )}
-      </FieldBlock>
-
-      {showStepsAndTips && (isEditing || example.steps.length > 0) && (
-        <div
-          className="space-y-2"
-          {...(isAnchorHost ? { 'data-req-anchor': 'knowledge-tree.knowledge-card.steps-tips' } : {})}
-        >
-          <span className={FIELD_LABEL_CLASS}>
-            解题步骤
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-medium text-gray-800">典型例题</span>
+        <label className="relative inline-flex items-center">
+          <span
+            className={`pointer-events-none inline-flex items-center h-7 pl-2.5 pr-6 rounded-md text-[13px] ${
+              example.kind
+                ? 'border border-teal-300 bg-teal-50 font-semibold text-teal-800'
+                : 'border border-gray-200 bg-white font-medium text-gray-400'
+            }`}
+          >
+            {exampleKindLabel(example.kind) || '请选择题型'}
           </span>
-          {example.steps.map((st, index) => (
-            <div key={st.id} className="flex gap-2 items-start">
-              <span className="mt-2 w-5 h-5 rounded-full bg-slate-700 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
-                {index + 1}
-              </span>
-              <div className="flex-1 space-y-1.5">
+          <ChevronDown
+            className={`pointer-events-none absolute right-1.5 w-3.5 h-3.5 ${
+              example.kind ? 'text-teal-700' : 'text-gray-400'
+            }`}
+          />
+          <select
+            value={example.kind ?? ''}
+            onChange={(e) => changeKind(e.target.value)}
+            aria-label="题型"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          >
+            <option value="" disabled>
+              请选择题型
+            </option>
+            {EXAMPLE_QUESTION_KINDS.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="ml-auto flex items-center gap-2">
+          {isEditing && canClear && (
+            <DeleteIconButton hasContent label="该例题" onConfirm={onClear} />
+          )}
+          {isEditing && (
+            <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.system-select">
+              <button
+                type="button"
+                className="text-[11px] text-blue-600 hover:underline inline-flex items-center gap-0.5"
+                onClick={onPullLeke}
+              >
+                <Link2 className="w-3 h-3" />
+                系统选择
+              </button>
+            </span>
+          )}
+        </div>
+      </div>
+
+      <ExampleField
+        label="题干"
+        value={example.stem}
+        editing={isEditing}
+        fieldId={stemFieldId || 'example-stem'}
+        placeholder="不填写，学生端题干处显示【暂无】"
+        anchor={isAnchorHost ? 'knowledge-tree.knowledge-card.example-stem' : undefined}
+        imeHandlers={imeHandlers}
+        fieldBlurHandlers={fieldBlurHandlers}
+        onChange={(stem) => {
+          if (example.kind === 'blank') editText({ ...example, ...withBlankFields(example, stem) });
+          else editText({ ...example, stem });
+        }}
+        footer={
+          isOptionKind(example.kind) ? (
+            <ChoiceOptionsFields
+              options={example.options}
+              editing={isEditing}
+              imeHandlers={imeHandlers}
+              onChange={(options, structural) => {
+                const next = { ...example, options };
+                if (structural) editStruct(next);
+                else editText(next);
+              }}
+            />
+          ) : undefined
+        }
+      />
+
+      {example.kind === 'material' ? (
+        <div className="space-y-2">
+          {example.children.map((child, index) => (
+            <div key={child.id} className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-gray-500">（{index + 1}）</span>
                 {isEditing ? (
-                  <>
-                    <KeyPointRichInput
-                      fieldId={st.id}
-                      value={st.title || ''}
-                      placeholder="步骤标题"
-                      tone="emerald"
-                      rows={1}
-                      compact
-                      imeHandlers={imeHandlers}
-                      fieldBlurHandlers={fieldBlurHandlers}
-                      onChange={(title) => {
-                        const steps = example.steps.map((item) =>
-                          item.id === st.id ? { ...item, title } : item
-                        );
-                        onLocalChange({ ...example, steps });
-                      }}
-                    />
-                    <KeyPointRichInput
-                      fieldId={`${st.id}-detail`}
-                      value={st.detail}
-                      placeholder="步骤正文"
-                      tone="emerald"
-                      rows={2}
-                      imeHandlers={imeHandlers}
-                      fieldBlurHandlers={fieldBlurHandlers}
-                      onChange={(detail) => {
-                        const steps = example.steps.map((item) =>
-                          item.id === st.id ? { ...item, detail } : item
-                        );
-                        onLocalChange({ ...example, steps });
-                      }}
-                    />
-                  </>
+                  <select
+                    value={child.kind}
+                    onChange={(e) => requestChildKind(child, e.target.value)}
+                    aria-label="子题题型"
+                    className="h-7 px-2 text-xs rounded-md border border-gray-200 bg-white text-gray-700"
+                  >
+                    {ORDINARY_QUESTION_KINDS.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
                 ) : (
-                  <div className="space-y-1.5">
-                    {st.title && <div className={TITLE_VIEW_CLASS}>{st.title}</div>}
-                    {st.detail ? (
-                      <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS}`}>{st.detail}</div>
-                    ) : null}
+                  <span className="text-[11px] text-gray-400">{exampleKindLabel(child.kind)}</span>
+                )}
+                {isEditing && (
+                  <div className="ml-auto">
+                    <DeleteIconButton
+                      hasContent={subQuestionHasContent(child)}
+                      label="该子题"
+                      className="p-1 text-red-400"
+                      iconClassName="w-3 h-3"
+                      onConfirm={() =>
+                        editStruct({
+                          ...example,
+                          children: example.children.filter((item) => item.id !== child.id),
+                        })
+                      }
+                    />
                   </div>
                 )}
               </div>
-              {isEditing && (
-                <div className="flex flex-col gap-0.5 pt-1">
-                  <button
-                    type="button"
-                    className="p-1 text-gray-400 disabled:opacity-30"
-                    disabled={index === 0}
-                    onClick={() =>
-                      onStructChange({ ...example, steps: moveItem(example.steps, index, -1) })
-                    }
-                  >
-                    <ArrowUp className="w-3 h-3" />
-                  </button>
-                  <button
-                    type="button"
-                    className="p-1 text-gray-400 disabled:opacity-30"
-                    disabled={index === example.steps.length - 1}
-                    onClick={() =>
-                      onStructChange({ ...example, steps: moveItem(example.steps, index, 1) })
-                    }
-                  >
-                    <ArrowDown className="w-3 h-3" />
-                  </button>
-                  <DeleteIconButton
-                    hasContent={stepHasContent(st)}
-                    label="该解题步骤"
-                    className="p-1 text-red-400"
-                    iconClassName="w-3 h-3"
-                    onConfirm={() =>
-                      onStructChange({
-                        ...example,
-                        steps: example.steps.filter((item) => item.id !== st.id),
-                      })
-                    }
-                  />
-                </div>
+              <ExampleField
+                label="题干"
+                value={child.stem}
+                editing={isEditing}
+                fieldId={`${child.id}-stem`}
+                placeholder="不填写，学生端题干处显示【暂无】"
+                imeHandlers={imeHandlers}
+                fieldBlurHandlers={fieldBlurHandlers}
+                onChange={(stem) => {
+                  if (child.kind === 'blank') updateChild(child.id, withBlankFields(child, stem));
+                  else updateChild(child.id, { stem });
+                }}
+                footer={
+                  isOptionKind(child.kind) ? (
+                    <ChoiceOptionsFields
+                      options={child.options}
+                      editing={isEditing}
+                      imeHandlers={imeHandlers}
+                      onChange={(options, structural) => updateChild(child.id, { options }, structural)}
+                    />
+                  ) : undefined
+                }
+              />
+              {child.kind === 'blank' && countBlanks(child.stem) > 0 ? (
+                <BlankAnswerFields
+                  answers={child.blankAnswers ?? alignBlankAnswers(child.answer, undefined, countBlanks(child.stem))}
+                  editing={isEditing}
+                  onChange={(blankAnswers) =>
+                    updateChild(child.id, { blankAnswers, answer: formatBlankAnswers(blankAnswers) })
+                  }
+                />
+              ) : (
+              <ExampleField
+                label="答案"
+                value={child.answer}
+                editing={isEditing}
+                fieldId={`${child.id}-answer`}
+                placeholder="不填写，学生端答案处显示【暂无】"
+                anchor={isAnchorHost && index === 0 ? 'knowledge-tree.knowledge-card.steps-tips' : undefined}
+                imeHandlers={imeHandlers}
+                fieldBlurHandlers={fieldBlurHandlers}
+                onChange={(answer) => updateChild(child.id, { answer })}
+              />
               )}
+              <ExampleField
+                label="解析"
+                value={child.analysis}
+                editing={isEditing}
+                fieldId={`${child.id}-analysis`}
+                placeholder="不填写，学生端解析处显示【暂无】"
+                anchor={isAnchorHost && index === 0 ? 'knowledge-tree.knowledge-card.add-step' : undefined}
+                imeHandlers={imeHandlers}
+                fieldBlurHandlers={fieldBlurHandlers}
+                onChange={(analysis) => updateChild(child.id, { analysis })}
+              />
             </div>
           ))}
           {isEditing && (
@@ -2317,103 +3399,88 @@ function ExampleEditor({
               compact
               tone="emerald"
               onClick={() => {
-                const id = uid('st');
-                onRequestFocus(id);
-                onStructChange({
-                  ...example,
-                  steps: [...example.steps, { id, title: '', detail: '' }],
-                });
+                const child = {
+                  id: uid('sub'),
+                  kind: 'qa' as const,
+                  stem: '',
+                  options: [],
+                  answer: '',
+                  analysis: '',
+                };
+                onRequestFocus(child.id);
+                editStruct({ ...example, children: [...example.children, child] });
               }}
             >
               {isAnchorHost ? (
-                <span
-                  className="req-anchor-inline"
-                  data-req-anchor="knowledge-tree.knowledge-card.add-step"
-                >
-                  添加步骤
+                <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.add-exam-tip">
+                  添加子题
                 </span>
               ) : (
-                '添加步骤'
+                '添加子题'
               )}
             </AddActionButton>
           )}
         </div>
-      )}
-
-      {showStepsAndTips && (isEditing || example.tips.length > 0) && (
-        <div className="space-y-2">
-          <span className={FIELD_LABEL_CLASS}>
-            解题要点
-          </span>
-          {example.tips.map((tip, index) => (
-            <div key={tip.id} className="flex items-start gap-2">
-              <span className="mt-1.5 w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
-                {index + 1}
-              </span>
-              {isEditing ? (
-                <div className="flex-1 min-w-0">
-                  <KeyPointRichInput
-                    fieldId={tip.id}
-                    value={tip.content}
-                    placeholder="解题要点正文"
-                    tone="emerald"
-                    rows={2}
-                    imeHandlers={imeHandlers}
-                    fieldBlurHandlers={fieldBlurHandlers}
-                    onChange={(content) => {
-                      const tips = example.tips.map((item) =>
-                        item.id === tip.id ? { ...item, content } : item
-                      );
-                      onLocalChange({ ...example, tips });
-                    }}
-                  />
-                </div>
-              ) : (
-                <div className={`flex-1 ${BODY_WELL_CLASS} ${BODY_VIEW_CLASS}`}>{tip.content}</div>
-              )}
-              {isEditing && (
-                <DeleteIconButton
-                  hasContent={tipHasContent(tip)}
-                  label="该解题要点"
-                  className="p-1 text-red-400"
-                  iconClassName="w-3 h-3"
-                  onConfirm={() =>
-                    onStructChange({
-                      ...example,
-                      tips: example.tips.filter((item) => item.id !== tip.id),
-                    })
-                  }
-                />
-              )}
-            </div>
-          ))}
-          {isEditing && (
-            <AddActionButton
-              compact
-              tone="orange"
-              onClick={() => {
-                const id = uid('tip');
-                onRequestFocus(id);
-                onStructChange({
-                  ...example,
-                  tips: [...example.tips, { id, content: '' }],
-                });
-              }}
-            >
-              {isAnchorHost ? (
-                <span
-                  className="req-anchor-inline"
-                  data-req-anchor="knowledge-tree.knowledge-card.add-exam-tip"
-                >
-                  添加要点
-                </span>
-              ) : (
-                '添加要点'
-              )}
-            </AddActionButton>
+      ) : example.kind ? (
+        <>
+          {example.kind === 'blank' && countBlanks(example.stem) > 0 ? (
+            <BlankAnswerFields
+              answers={example.blankAnswers ?? alignBlankAnswers(example.answer, undefined, countBlanks(example.stem))}
+              editing={isEditing}
+              onChange={(blankAnswers) => editText({ ...example, blankAnswers, answer: formatBlankAnswers(blankAnswers) })}
+            />
+          ) : (
+          <ExampleField
+            label="答案"
+            value={example.answer}
+            editing={isEditing}
+            fieldId={`${stemFieldId || 'example'}-answer`}
+            placeholder="不填写，学生端答案处显示【暂无】"
+            anchor={isAnchorHost ? 'knowledge-tree.knowledge-card.steps-tips' : undefined}
+            imeHandlers={imeHandlers}
+            fieldBlurHandlers={fieldBlurHandlers}
+            onChange={(answer) => editText({ ...example, answer, blankAnswers: undefined })}
+          />
           )}
-        </div>
-      )}
+          <ExampleField
+            label="解析"
+            value={example.analysis}
+            editing={isEditing}
+            fieldId={`${stemFieldId || 'example'}-analysis`}
+            placeholder="不填写，学生端解析处显示【暂无】"
+            anchor={isAnchorHost ? 'knowledge-tree.knowledge-card.add-step' : undefined}
+            imeHandlers={imeHandlers}
+            fieldBlurHandlers={fieldBlurHandlers}
+            onChange={(analysis) => editText({ ...example, analysis })}
+          />
+          {isAnchorHost && (
+            <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.add-exam-tip" />
+          )}
+        </>
+      ) : isAnchorHost ? (
+        <>
+          <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.steps-tips" />
+          <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.add-step" />
+          <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.add-exam-tip" />
+        </>
+      ) : null}
+      <AlertDialog open={!!pendingKind} onOpenChange={(next) => !next && setPendingKind(null)}>
+        <AlertDialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认切换题型吗？</AlertDialogTitle>
+            <AlertDialogDescription>
+              切题型可能会清空已维护的信息
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmKindSwitch}>确认</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
