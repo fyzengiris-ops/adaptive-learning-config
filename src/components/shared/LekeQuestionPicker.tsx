@@ -13,11 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  MaterialChildTypeSchemeSwitch,
-  materialChildTypeText,
-  useMaterialChildTypeScheme,
-} from '@/components/shared/materialChildTypeScheme';
+import { materialChildTypeText } from '@/components/shared/materialChildTypeScheme';
 import { ExampleEditSchemeSwitch, useExampleEditScheme } from '@/components/shared/exampleEditScheme';
 import QuestionBankEditorDialog, {
   createEmptyBankEditorDraft,
@@ -51,7 +47,11 @@ function BlankLine({ label }: { label: string }) {
   );
 }
 
-function BlankText({ text }: { text: string }) {
+function PlainBlankLine() {
+  return <span className="inline-block min-w-[4em] translate-y-px border-b border-gray-800 align-baseline" />;
+}
+
+function BlankText({ text, plain = false }: { text: string; plain?: boolean }) {
   const pattern = new RegExp(BLANK_PATTERN.source, 'g');
   const nodes: React.ReactNode[] = [];
   let last = 0;
@@ -59,7 +59,7 @@ function BlankText({ text }: { text: string }) {
   let key = 0;
   while ((match = pattern.exec(text))) {
     if (match.index > last) nodes.push(text.slice(last, match.index));
-    nodes.push(<BlankLine key={key++} label={match[1]} />);
+    nodes.push(plain ? <PlainBlankLine key={key++} /> : <BlankLine key={key++} label={match[1]} />);
     last = match.index + match[0].length;
   }
   if (last < text.length) nodes.push(text.slice(last));
@@ -74,8 +74,17 @@ function blankAnswerLines(answer: string, count: number) {
   return Array.from({ length: count }, (_, index) => lines[index] ?? '');
 }
 
-function BlankAnswerReadout({ answer, count }: { answer: string; count: number }) {
+function plainBlankAnswerText(lines: string[]) {
+  const parts = lines.map((item, index) => item.replace(new RegExp(`^${index + 1}\\s+`), '').trim());
+  if (!parts.some(Boolean)) return '暂无';
+  return parts.map((item) => item || '暂无').join('；');
+}
+
+function BlankAnswerReadout({ answer, count, plain = false }: { answer: string; count: number; plain?: boolean }) {
   const lines = blankAnswerLines(answer, count);
+  if (plain) {
+    return <p className="text-[13px] text-gray-800 leading-relaxed">{plainBlankAnswerText(lines)}</p>;
+  }
   return (
     <div className="space-y-2">
       {lines.map((item, index) => (
@@ -460,7 +469,6 @@ export default function LekeQuestionPicker({
   onSelect,
 }: LekeQuestionPickerProps) {
   const [keyword, setKeyword] = useState('');
-  const childTypeScheme = useMaterialChildTypeScheme();
   const editScheme = useExampleEditScheme();
   const [typeFilter, setTypeFilter] = useState('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -527,7 +535,6 @@ export default function LekeQuestionPicker({
                   典型例题
                 </span>
               </h3>
-              <MaterialChildTypeSchemeSwitch />
               <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.edit-scheme">
                 <ExampleEditSchemeSwitch />
               </span>
@@ -570,8 +577,9 @@ export default function LekeQuestionPicker({
             </div>
           </div>
 
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5">
           <div
-            className="req-anchor-host flex-1 min-h-0 overflow-y-auto px-5 pb-5 space-y-3"
+            className="req-anchor-host space-y-3"
             data-req-anchor="knowledge-tree.knowledge-card.picker-question"
           >
             {list.length === 0 ? (
@@ -611,7 +619,11 @@ export default function LekeQuestionPicker({
                             ) : null}
                           </div>
                           <p className="text-[13px] text-gray-800 whitespace-pre-wrap leading-[1.7]">
-                            {q.stem}
+                            {editScheme === 'bank' && countBlanks(q.stem) > 0 ? (
+                              <BlankText text={q.stem} plain />
+                            ) : (
+                              q.stem
+                            )}
                           </p>
                         </div>
                         <span
@@ -660,15 +672,23 @@ export default function LekeQuestionPicker({
                                   <p className="min-w-0 whitespace-pre-wrap">
                                     {materialChildTypeText(
                                       child.questionType,
-                                      childTypeScheme,
+                                      'all',
                                       child.questionType.includes('多选')
                                     )}
-                                    {countBlanks(child.stem) > 0 ? <BlankText text={child.stem} /> : child.stem}
+                                    {countBlanks(child.stem) > 0 ? (
+                                      <BlankText text={child.stem} plain={editScheme === 'bank'} />
+                                    ) : (
+                                      child.stem
+                                    )}
                                   </p>
                                 </div>
                                 <div className="mt-2 text-[11px] font-semibold text-emerald-700 mb-1">答案</div>
                                 {countBlanks(child.stem) > 0 ? (
-                                  <BlankAnswerReadout answer={child.answer} count={countBlanks(child.stem)} />
+                                  <BlankAnswerReadout
+                                    answer={child.answer}
+                                    count={countBlanks(child.stem)}
+                                    plain={editScheme === 'bank'}
+                                  />
                                 ) : (
                                   <p className="text-[13px] text-gray-800 whitespace-pre-wrap leading-relaxed">
                                     {child.answer || '暂无'}
@@ -684,9 +704,17 @@ export default function LekeQuestionPicker({
                             <>
                               <div>
                                 <div className="text-[11px] font-semibold text-emerald-700 mb-1">答案</div>
-                                <p className="text-[13px] text-gray-800 whitespace-pre-wrap leading-relaxed">
-                                  {q.answer || '暂无'}
-                                </p>
+                                {editScheme === 'bank' && countBlanks(q.stem) > 0 ? (
+                                  <BlankAnswerReadout
+                                    answer={q.answer}
+                                    count={countBlanks(q.stem)}
+                                    plain
+                                  />
+                                ) : (
+                                  <p className="text-[13px] text-gray-800 whitespace-pre-wrap leading-relaxed">
+                                    {q.answer || '暂无'}
+                                  </p>
+                                )}
                               </div>
                               <div className="h-px bg-slate-200/80" />
                               <div>
@@ -729,6 +757,7 @@ export default function LekeQuestionPicker({
                 );
               })
             )}
+          </div>
           </div>
         </div>
       </div>

@@ -11,6 +11,7 @@
 2. 用 `shared/project-context.template.md` 覆盖填写为新的 `shared/project-context.md`。  
 3. **不要**改 `shared/incremental-scope-mode.md` 的 A/B/C 通用定义（除非要升级方法论）。  
 4. 按新项目创建 `docs/prd-workflow/` 等落盘目录（路径以你填写的 project-context 为准）。
+5. 在 `project-context.md` 写上「需求面板编辑」。要和本仓库一样能改正文，写「打开」，并让 Skill4 按 `04-prd-prototype-integrator/references/logic-panel-editing.md` 接上编辑、删除、标色。
 
 ## 建议执行顺序
 

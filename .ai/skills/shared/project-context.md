@@ -106,6 +106,20 @@ js/requirements/index.js
 
 锚点约定：优先 `data-req-anchor="<anchorId>"`（或项目既有等价属性）。
 
+需求面板编辑：**仅查看**。
+
+要收成仅查看，把 `src/components/prd/RequirementLogicEditor.tsx` 里的 `REQUIREMENT_LOGIC_EDITING` 改成 `false`。行为说明在 `.ai/skills/04-prd-prototype-integrator/references/logic-panel-editing.md`。
+
+面板与回写文件：
+
+```txt
+src/components/prd/RequirementLogicEditor.tsx
+src/components/prd/RequirementPanel.tsx
+src/components/prd/RequirementFloatingCard.tsx
+src/lib/requirementLogicEdits.ts
+src/app/api/requirements/logic/route.ts
+```
+
 ---
 
 ## activate / 路由约定

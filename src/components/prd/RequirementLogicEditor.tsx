@@ -5,7 +5,7 @@ import type { LogicSection } from '@/data/requirements/schema';
 
 /**
  * 需求正文的编辑、删除、标色开关。
- * 现在是仅查看。要恢复这套能力，把下面改成 true。
+ * 现在是仅查看。要重新打开编辑，把下面改成 true。
  * 右侧 PRD 面板和角标浮层都读这个开关。
  *
  * 恢复后的做法：

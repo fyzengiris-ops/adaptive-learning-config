@@ -3,13 +3,13 @@
 import React, { useSyncExternalStore } from 'react';
 
 /**
- * 习题怎么改，两套方案共用这一处，刷新后回到方案 A。
+ * 习题怎么改，两套方案共用这一处，刷新后回到方案 B。
  * 方案 A：在配置后台的典型例题里直接改题干、选项、答案和解析。
  * 方案 B：配置后台和系统选择都只展示。每道题有编辑图标，点开后进入题库编辑页。
  */
 export type ExampleEditScheme = 'inline' | 'bank';
 
-let scheme: ExampleEditScheme = 'inline';
+let scheme: ExampleEditScheme = 'bank';
 const listeners = new Set<() => void>();
 
 function emit() {

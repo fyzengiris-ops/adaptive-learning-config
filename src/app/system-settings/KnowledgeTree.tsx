@@ -5653,11 +5653,6 @@ export default function KnowledgeTree({ onDetailViewChange, location, onLocation
             onClick={() => openPrd('baseline')}
           />
           <PrdToggleButton
-            open={prdView === 'current'}
-            label="PRD 方案A"
-            onClick={() => openPrd('current')}
-          />
-          <PrdToggleButton
             open={prdView === 'scheme-b'}
             label="PRD 方案B"
             onClick={() => openPrd('scheme-b')}
@@ -7440,11 +7435,6 @@ export default function KnowledgeTree({ onDetailViewChange, location, onLocation
                 label="PRD 已有"
                 scopeClass="prd-scope-baseline"
                 onClick={() => openPrd('baseline')}
-              />
-              <PrdToggleButton
-                open={prdView === 'current'}
-                label="PRD 方案A"
-                onClick={() => openPrd('current')}
               />
               <PrdToggleButton
                 open={prdView === 'scheme-b'}

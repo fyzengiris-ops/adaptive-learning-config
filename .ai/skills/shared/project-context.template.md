@@ -84,6 +84,12 @@ docs/prd/<页面或流程>.prd.md
 
 锚点约定：`<例如 data-req-anchor>`
 
+需求面板编辑：`<打开 / 仅查看>`
+
+- 打开：右侧 PRD 面板和角标浮层显示编辑、删除、标色。
+- 仅查看：藏起这些控件，已标色的文字仍然显示。
+- 不填时按打开。实现要求见 `04-prd-prototype-integrator/references/logic-panel-editing.md`。
+
 ---
 
 ## activate / 路由字段约定（按项目有则填）

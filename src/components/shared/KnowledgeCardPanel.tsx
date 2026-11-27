@@ -33,10 +33,7 @@ import {
 import { Button } from '@/components/ui/button';
 import LekeQuestionPicker, { type BankQuestion } from '@/components/shared/LekeQuestionPicker';
 import KnowledgeCardTabletPreview from '@/components/shared/KnowledgeCardTabletPreview';
-import {
-  materialChildTypeText,
-  useMaterialChildTypeScheme,
-} from '@/components/shared/materialChildTypeScheme';
+import { materialChildTypeText } from '@/components/shared/materialChildTypeScheme';
 import { ExampleEditSchemeSwitch, useExampleEditScheme } from '@/components/shared/exampleEditScheme';
 import QuestionBankEditorDialog, {
   createEmptyBankEditorDraft,
@@ -223,14 +220,16 @@ function questionBodyHasText(stem?: string, options?: ExampleOption[]) {
   return !!options?.some((item) => item.text.trim());
 }
 
-export function examPointHasExample(ep?: KnowledgeCardExamPoint) {
-  const ex = ep?.example;
-  if (!ex) return false;
+function exampleBodyHasText(ex: KnowledgeCardExample) {
   if (questionBodyHasText(ex.stem, ex.options)) return true;
   return (
     ex.kind === 'material' &&
     ex.children.some((child) => questionBodyHasText(child.stem, child.options))
   );
+}
+
+export function examPointHasExample(ep?: KnowledgeCardExamPoint) {
+  return !!ep?.example && exampleBodyHasText(ep.example);
 }
 
 export function examPointHasDescription(ep?: KnowledgeCardExamPoint) {
@@ -447,13 +446,13 @@ export function inverseProportionKnowledgeCard(): KnowledgeCard {
         description: '两个变量的乘积是不为 0 的常数时，它们的数量关系可以写成反比例函数 y = k/x（k ≠ 0）。',
         example: seededExample(
           'q-inverse-1',
-          'single',
-          '下列关系中，成反比例函数关系的是（ ）。',
-          'C',
-          '矩形面积一定时，长与宽的乘积为常数，可写成 y = k/x（k ≠ 0），成反比例。正方形边长与面积、圆的半径与周长不是这种关系；速度一定时，路程与时间成正比例。',
+          'multiple',
+          '下列关系中，成反比例函数关系的有（ ）。',
+          'B、C',
+          '总价一定时，单价与数量的乘积为常数；面积为 12 的矩形，长与宽的乘积为常数。两者都可写成 y = k/x（k ≠ 0），成反比例。正方形边长与面积、圆的半径与周长不是这种关系。',
           choiceOptions([
             '正方形的边长与面积',
-            '速度一定时，路程与时间',
+            '总价一定时，单价与数量',
             '面积为 12 的矩形，长与宽',
             '圆的半径与周长',
           ]),
@@ -466,11 +465,29 @@ export function inverseProportionKnowledgeCard(): KnowledgeCard {
         description: '能整理成 y = k/x（k 是不为 0 的常数）的函数，才是反比例函数。',
         example: seededExample(
           'q-inverse-2',
-          'single',
-          '下列函数中，是反比例函数的是（ ）。',
-          'B',
-          '反比例函数的形式是 y = k/x（k ≠ 0）。y = 2/x 中 k = 2 ≠ 0，是反比例函数。y = 2x、y = x/2 是正比例，y = 2/x + 1 多了常数项，都不是。',
-          choiceOptions(['y = 2x', 'y = 2/x', 'y = x/2', 'y = 2/x + 1']),
+          'material',
+          '已知函数 y = 2x，y = 2/x，y = 6/x，y = 2/x + 1。',
+          '',
+          '',
+          [],
+          [
+            {
+              id: 'q-inverse-2-1',
+              kind: 'multiple',
+              stem: '下列函数中，是反比例函数的有（ ）。',
+              options: choiceOptions(['y = 2x', 'y = 2/x', 'y = 6/x', 'y = 2/x + 1']),
+              answer: 'B、C',
+              analysis: '反比例函数的形式是 y = k/x（k ≠ 0）。y = 2/x 中 k = 2，y = 6/x 中 k = 6，都是反比例函数。y = 2x 是正比例，y = 2/x + 1 多了常数项，都不是。',
+            },
+            {
+              id: 'q-inverse-2-2',
+              kind: 'judge',
+              stem: '能整理成 y = k/x（k ≠ 0）的函数，才是反比例函数。（ ）',
+              options: [],
+              answer: '正确',
+              analysis: '反比例函数要求可以整理成 y = k/x，并且 k 是不为 0 的常数。',
+            },
+          ],
         ),
       },
       {
@@ -649,7 +666,11 @@ function BlankLine({ label }: { label: string }) {
   );
 }
 
-function BlankText({ text }: { text: string }) {
+function PlainBlankLine() {
+  return <span className="inline-block min-w-[4em] translate-y-px border-b border-gray-800 align-baseline" />;
+}
+
+function BlankText({ text, plain = false }: { text: string; plain?: boolean }) {
   const pattern = new RegExp(BLANK_PATTERN.source, 'g');
   const nodes: React.ReactNode[] = [];
   let last = 0;
@@ -657,7 +678,7 @@ function BlankText({ text }: { text: string }) {
   let key = 0;
   while ((match = pattern.exec(text))) {
     if (match.index > last) nodes.push(text.slice(last, match.index));
-    nodes.push(<BlankLine key={key++} label={match[1]} />);
+    nodes.push(plain ? <PlainBlankLine key={key++} /> : <BlankLine key={key++} label={match[1]} />);
     last = match.index + match[0].length;
   }
   if (last < text.length) nodes.push(text.slice(last));
@@ -1324,12 +1345,19 @@ function DeleteIconButton({
   onConfirm,
   className = 'p-1 rounded hover:bg-red-50 text-red-400',
   iconClassName = 'w-3.5 h-3.5',
+  dialogTitle = '确认删除？',
+  confirmText = '删除',
+  dialogDescription,
 }: {
   hasContent: boolean;
   label: string;
   onConfirm: () => void;
   className?: string;
   iconClassName?: string;
+  dialogTitle?: string;
+  confirmText?: string;
+  /** 不传时保留原来的说明；传空字符串则不显示说明。 */
+  dialogDescription?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1373,11 +1401,13 @@ function DeleteIconButton({
         >
           <AlertDialogHeader>
             <AlertDialogTitle>
-              确认删除？
+              {dialogTitle}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {label}内已有内容，删除后不可恢复。确定要删除吗？
-            </AlertDialogDescription>
+            {dialogDescription !== '' && (
+              <AlertDialogDescription>
+                {dialogDescription ?? `${label}内已有内容，删除后不可恢复。确定要删除吗？`}
+              </AlertDialogDescription>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
@@ -1388,7 +1418,7 @@ function DeleteIconButton({
                 setOpen(false);
               }}
             >
-              删除
+              {confirmText}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2846,15 +2876,31 @@ function ChoiceOptionsFields({
   );
 }
 
+function plainBlankAnswerText(answers: string[]) {
+  const parts = answers.map((item) => item.trim());
+  if (!parts.some(Boolean)) return '暂无';
+  return parts.map((item) => item || '暂无').join('；');
+}
+
 function BlankAnswerFields({
   answers,
   editing,
   onChange,
+  plain = false,
 }: {
   answers: string[];
   editing: boolean;
   onChange: (answers: string[]) => void;
+  plain?: boolean;
 }) {
+  if (plain && !editing) {
+    return (
+      <div className="space-y-1.5">
+        <div className={FIELD_LABEL_CLASS}>答案</div>
+        <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS}`}>{plainBlankAnswerText(answers)}</div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-1.5">
       <div className={FIELD_LABEL_CLASS}>答案</div>
@@ -2904,6 +2950,7 @@ function ExampleField({
   fieldBlurHandlers,
   onChange,
   footer,
+  plainBlanks = false,
 }: {
   label: string;
   value: string;
@@ -2915,6 +2962,7 @@ function ExampleField({
   fieldBlurHandlers: FieldBlurHandlers;
   onChange: (value: string) => void;
   footer?: React.ReactNode;
+  plainBlanks?: boolean;
 }) {
   return (
     <div className="space-y-1.5" {...(anchor ? { 'data-req-anchor': anchor } : {})}>
@@ -2934,8 +2982,12 @@ function ExampleField({
           footer={footer}
         />
       ) : (
-        <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS}`}>
-          {value.trim() ? value : '暂无'}
+        <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS} whitespace-pre-wrap`}>
+          {value.trim() ? (
+            plainBlanks && countBlanks(value) > 0 ? <BlankText text={value} plain /> : value
+          ) : (
+            '暂无'
+          )}
           {footer}
         </div>
       )}
@@ -2990,6 +3042,7 @@ function PreviewKindPrefix({
   kind?: ExampleQuestionKind | null;
   spaced?: boolean;
 }) {
+  if (kind !== 'multiple') return null;
   const label = exampleKindLabel(kind);
   if (!label) return null;
   return <span className={`${spaced ? 'mr-1 ' : ''}font-bold text-black`}>【{label}】</span>;
@@ -3006,7 +3059,8 @@ export function TypicalExampleReadout({
   anchorHost?: boolean;
   variant?: 'card' | 'preview';
 }) {
-  const childTypeScheme = useMaterialChildTypeScheme();
+  const editScheme = useExampleEditScheme();
+  const plainBlanks = variant !== 'preview' && editScheme === 'bank';
   if (variant === 'preview') {
     return (
       <div className="space-y-3">
@@ -3024,7 +3078,7 @@ export function TypicalExampleReadout({
                     <div className="whitespace-pre-wrap">
                       {materialChildTypeText(
                         exampleKindLabel(child.kind),
-                        childTypeScheme,
+                        'multiple-only',
                         child.kind === 'multiple'
                       )}
                       {child.stem.trim() ? <BlankText text={child.stem} /> : '暂无'}
@@ -3091,7 +3145,7 @@ export function TypicalExampleReadout({
         <div {...(anchorHost ? { className: 'req-anchor-host', 'data-req-anchor': 'knowledge-tree.knowledge-card.example-stem' } : {})}>
           <div className={`${FIELD_LABEL_CLASS} mb-1.5`}>题干</div>
           <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS} whitespace-pre-wrap`}>
-            {example.stem.trim() ? <BlankText text={example.stem} /> : '暂无'}
+            {example.stem.trim() ? <BlankText text={example.stem} plain={plainBlanks} /> : '暂无'}
           </div>
         </div>
         {example.children.map((child, index) => (
@@ -3100,7 +3154,7 @@ export function TypicalExampleReadout({
               （{index + 1}） · {exampleKindLabel(child.kind)}
             </div>
             <div className={`${BODY_WELL_CLASS} bg-white ${BODY_VIEW_CLASS} whitespace-pre-wrap`}>
-              {child.stem.trim() ? <BlankText text={child.stem} /> : '暂无'}
+              {child.stem.trim() ? <BlankText text={child.stem} plain={plainBlanks} /> : '暂无'}
               {isOptionKind(child.kind) ? <OptionLines options={normalizeOptions(child.options)} /> : null}
             </div>
             {revealAnswer ? (
@@ -3109,6 +3163,7 @@ export function TypicalExampleReadout({
                   <BlankAnswerFields
                     answers={child.blankAnswers ?? alignBlankAnswers(child.answer, undefined, countBlanks(child.stem))}
                     editing={false}
+                    plain={plainBlanks}
                     onChange={() => {}}
                   />
                 ) : (
@@ -3147,7 +3202,7 @@ export function TypicalExampleReadout({
       <div {...(anchorHost ? { className: 'req-anchor-host', 'data-req-anchor': 'knowledge-tree.knowledge-card.example-stem' } : {})}>
         <div className={`${FIELD_LABEL_CLASS} mb-1.5`}>题干</div>
         <div className={`${BODY_WELL_CLASS} ${BODY_VIEW_CLASS} whitespace-pre-wrap`}>
-          {example.stem.trim() ? <BlankText text={example.stem} /> : '暂无'}
+          {example.stem.trim() ? <BlankText text={example.stem} plain={plainBlanks} /> : '暂无'}
           {isOptionKind(example.kind) ? <OptionLines options={normalizeOptions(example.options)} /> : null}
         </div>
       </div>
@@ -3157,6 +3212,7 @@ export function TypicalExampleReadout({
             <BlankAnswerFields
               answers={example.blankAnswers ?? alignBlankAnswers(example.answer, undefined, countBlanks(example.stem))}
               editing={false}
+              plain={plainBlanks}
               onChange={() => {}}
             />
           ) : (
@@ -3220,6 +3276,9 @@ function ExampleEditor({
   const canClear = !!onClear && exampleHasContent(example);
   const editScheme = useExampleEditScheme();
   const contentEditing = isEditing && editScheme === 'inline';
+  const plainBlanks = editScheme === 'bank';
+  const maintainedExample = exampleBodyHasText(example);
+  const showKindChip = editScheme !== 'bank' || !!example.kind;
   const [bankEditorOpen, setBankEditorOpen] = useState(false);
   const [pendingKind, setPendingKind] = useState<
     | { scope: 'example'; kind: ExampleQuestionKind }
@@ -3325,6 +3384,7 @@ function ExampleEditor({
     >
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-sm font-medium text-gray-800">典型例题</span>
+        {showKindChip ? (
         <label className="relative inline-flex items-center">
           <span
             className={`pointer-events-none inline-flex items-center h-7 rounded-md text-[13px] ${
@@ -3362,8 +3422,9 @@ function ExampleEditor({
           </select>
           ) : null}
         </label>
+        ) : null}
         <div className="ml-auto flex items-center gap-2">
-          {isEditing && editScheme === 'bank' && (
+          {isEditing && editScheme === 'bank' && maintainedExample && (
             <span
               className={isAnchorHost ? 'req-anchor-inline' : undefined}
               {...(isAnchorHost ? { 'data-req-anchor': 'knowledge-tree.knowledge-card.bank-editor' } : {})}
@@ -3379,8 +3440,27 @@ function ExampleEditor({
               </button>
             </span>
           )}
-          {contentEditing && canClear && (
-            <DeleteIconButton hasContent label="该例题" onConfirm={onClear} />
+          {isEditing && editScheme === 'bank' && canClear && onClear && (
+            <DeleteIconButton
+              hasContent
+              label="该例题"
+              onConfirm={onClear}
+              dialogTitle="确认清空当前例题吗？"
+              confirmText="确认清空"
+              dialogDescription=""
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-red-200 text-red-500 hover:bg-red-50"
+              iconClassName="h-3.5 w-3.5"
+            />
+          )}
+          {contentEditing && canClear && onClear && (
+            <DeleteIconButton
+              hasContent
+              label="该例题"
+              onConfirm={onClear}
+              dialogTitle="确认清空当前例题吗？"
+              confirmText="确认清空"
+              dialogDescription=""
+            />
           )}
           {isEditing && (
             <span className="req-anchor-inline" data-req-anchor="knowledge-tree.knowledge-card.system-select">
@@ -3406,6 +3486,7 @@ function ExampleEditor({
         anchor={isAnchorHost ? 'knowledge-tree.knowledge-card.example-stem' : undefined}
         imeHandlers={imeHandlers}
         fieldBlurHandlers={fieldBlurHandlers}
+        plainBlanks={plainBlanks}
         onChange={(stem) => {
           if (example.kind === 'blank') editText({ ...example, ...withBlankFields(example, stem) });
           else editText({ ...example, stem });
@@ -3473,6 +3554,7 @@ function ExampleEditor({
                 placeholder="不填写，学生端题干处显示【暂无】"
                 imeHandlers={imeHandlers}
                 fieldBlurHandlers={fieldBlurHandlers}
+                plainBlanks={plainBlanks}
                 onChange={(stem) => {
                   if (child.kind === 'blank') updateChild(child.id, withBlankFields(child, stem));
                   else updateChild(child.id, { stem });
@@ -3492,6 +3574,7 @@ function ExampleEditor({
                 <BlankAnswerFields
                   answers={child.blankAnswers ?? alignBlankAnswers(child.answer, undefined, countBlanks(child.stem))}
                   editing={contentEditing}
+                  plain={plainBlanks}
                   onChange={(blankAnswers) =>
                     updateChild(child.id, { blankAnswers, answer: formatBlankAnswers(blankAnswers) })
                   }
@@ -3558,6 +3641,7 @@ function ExampleEditor({
             <BlankAnswerFields
               answers={example.blankAnswers ?? alignBlankAnswers(example.answer, undefined, countBlanks(example.stem))}
               editing={contentEditing}
+              plain={plainBlanks}
               onChange={(blankAnswers) => editText({ ...example, blankAnswers, answer: formatBlankAnswers(blankAnswers) })}
             />
           ) : (

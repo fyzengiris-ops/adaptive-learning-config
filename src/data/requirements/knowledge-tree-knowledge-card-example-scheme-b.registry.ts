@@ -34,7 +34,7 @@ export const knowledgeTreeKnowledgeCardExampleSchemeBRegistry: RequirementRegist
   requirements: [
     {
       id: 'KT_KC_EXB-002',
-      title: '方案B下配置后台的例题',
+      title: '例题的显示',
       sourceType: 'decision',
       objectType: 'region',
       objectName: '典型例题',
@@ -54,18 +54,36 @@ export const knowledgeTreeKnowledgeCardExampleSchemeBRegistry: RequirementRegist
       ],
       logicSections: [
         {
-          title: '只展示',
-          items: [
-            '方案B下，典型例题的题型、题干、选项、答案、解析和子题只展示。',
-            '配置后台不提供切换题型、删除例题、删除子题、添加子题、添加选项，也不能直接改这些文字。',
-          ],
-        },
-        {
           title: '编辑题目与存储',
           items: [
             '每道例题标题旁有一个编辑图标。点开后弹出题库录题页。',
             '在录题页点保存，把题型、题干、选项、答案、解析写回这道例题，配置后台接着按保存后的内容展示。点取消则不改。',
             '如果这道例题来自系统选择，并且在录题页改过内容，保存后依旧是原来的题目 ID',
+          ],
+        },
+        {
+          title: '例题无数据',
+          items: [
+            '在当前考点的典型例题从来没有维护，或者是维护过例题内容又被清空了的时候，不显示答案、解析区域，只显示题干的区域，也不显示清空和编辑的icon\n\n只在题干区域显示静态提示文案——暂无\n\n以及在编辑态的时候，显示从系统选择的icon\n',
+          ],
+        },
+        {
+          title: '例题有数据',
+          items: [
+            '典型例题的题型、父题题干、子题题干、选项、答案、解析都只做展示，不能直接编辑。',
+          ],
+        },
+        {
+          title: '例题的维护',
+          items: [
+            '来源：只能从系统选择',
+            '题型：支持当前学科（英语、语文学科除外）在资源库的所有题型\n\n英语学科不支持听力题、口语题\n\n语文学科不支持口语题\n\n如果用户选择的题型，在题库里是没有答案的，则，在我们配置后台显示的时候，也不显示答案区域，例如手写题',
+            '题干显示样式：\n\n选择题题干：题干内容和选项内容，都需要做为题干内容在题干区域显示\n\n含子题的大题：父题题干和子题题干独立展示，子题题干后面紧接着显示对应的答案、解析区域\n\n填空题的题干：按照习题库里显示题干的样式显示即可（空位仅有下划线）',
+            '题型显示：\n\n大题题型和子题题型，在配置后台页面都需要显示，在预览的时候，无论是大题还是子题，都只有题型是【多选题】的时候才显示，其他题型都不用显示',
+            '例题的编辑：\n\n无论是从系统选择时，还是已经选择之后，用户都可以点击【编辑icon】，点击编辑icon，调用教研员现有的维护习题的功能',
+            '例题的存储：\n\n无论用户是否对例题进行编辑，题目ID都不变更',
+            '例题的变动：\n\n如果当前例题在资源库的其他地方被编辑更改了，或者是被删除了，我们这边做同步的变动，但是我们这边不需要重新操作发布功能，刷新即更新',
+            '例题的清空：\n\n当典型例题已维护后，再编辑按钮的后方，显示一个删除的按钮，点击，则显示弹窗提示\n\n弹窗文案：确认清空当前例题吗？\n\n弹窗按钮：取消，确认清空\n',
           ],
         },
       ],
@@ -78,7 +96,7 @@ export const knowledgeTreeKnowledgeCardExampleSchemeBRegistry: RequirementRegist
     },
     {
       id: 'KT_KC_EXB-003',
-      title: '方案B下系统选择的编辑',
+      title: '系统候选题的编辑按钮',
       sourceType: 'decision',
       objectType: 'dialog',
       objectName: '典型例题选题',
@@ -101,7 +119,7 @@ export const knowledgeTreeKnowledgeCardExampleSchemeBRegistry: RequirementRegist
         {
           title: '编辑图标',
           items: [
-            '方案B下，系统选择里每道题都有一个编辑图标，不展开也能看到。',
+            '系统选择里每道题都有一个编辑图标，不展开也能看到。',
             '点编辑图标打开题库录题页',
           ],
         },
@@ -122,7 +140,7 @@ export const knowledgeTreeKnowledgeCardExampleSchemeBRegistry: RequirementRegist
     },
     {
       id: 'KT_KC_EXB-004',
-      title: '题库录题页',
+      title: '习题编辑页面',
       sourceType: 'decision',
       objectType: 'dialog',
       objectName: '题库录题页',
@@ -144,7 +162,7 @@ export const knowledgeTreeKnowledgeCardExampleSchemeBRegistry: RequirementRegist
         {
           title: '页面内容',
           items: [
-            '录题页以弹窗打开，版式沿用乐课网已经实现的录题页。',
+            '编辑题目以弹窗打开，版式沿用乐课网已经实现的录题页。',
             '左侧维护学段科目、题型、题干内容。单选题用圆点、多选题用勾选标出正确答案，并维护各选项。判断、填空、问答维护答案。材料题在子题里维护题型、题干、选项或答案、解析。底部是解析。',
             '右侧设置用途、版本、知识点、类型、年份、地区、级别、难易度。从配置后台打开时，知识点默认带上之前将习题录入习题库时设置的知识点名称',
             '底部是保存和取消。',
@@ -162,6 +180,158 @@ export const knowledgeTreeKnowledgeCardExampleSchemeBRegistry: RequirementRegist
         decisionFile: DECISION,
         decisionObject: '题库录题页',
         relatedFiles: ['src/components/shared/QuestionBankEditorDialog.tsx'],
+      },
+    },
+    {
+      id: 'KT_KC_EX-004',
+      title: '预览习题',
+      sourceType: 'decision',
+      objectType: 'panel',
+      objectName: '平板预览',
+      module: MODULE,
+      pageName: PAGE,
+      route: ROUTE,
+      anchorId: 'knowledge-tree.knowledge-card.tablet-preview',
+      anchorStatus: 'implemented',
+      batchId: BATCH,
+      activate: [
+        { type: 'navigate', label: '进入知识体系-通用知识树', to: '/knowledge-system' },
+        { type: 'setTab', label: '切到学习资源', tab: 'resource' },
+        {
+          type: 'openDialog',
+          label: '打开平板预览',
+          dialog: 'knowledge-card-tablet-preview',
+        },
+        {
+          type: 'scrollTo',
+          label: '定位预览入口',
+          anchorId: 'knowledge-tree.knowledge-card.tablet-preview',
+        },
+      ],
+      logicSections: [
+        {
+          title: '题型显示',
+          items: [
+            '大题的题型，仅多选题的时候，在题干前面，格式是（多选题）\n\n子题题型，同样，也只有在题型时多选题的时候显示，，字重和颜色与题干一致。其他题型都不显示',
+            '材料题子题的序号用（1）（2），序号不加粗。',
+          ],
+        },
+        {
+          title: '子题题干显示样式',
+          items: [
+            '对齐方式：子题是选择题时，选项不和序号对齐，和题干内容左对齐。显示了题型的，选项与题型左对齐；没有题型的，选项与题干左对齐。',
+            '题干显示：无论是否查看解析，父题题干和子题题干都聚合在题干位置展示，在查看解析的时候\n，答案和解析还是独立的区域\n',
+            '答案解析的显示：子题的答案和解析各自按照如下要求展示：\n\n答案：（1）答案（2）答案，按子题序号往下排\n\n解析：（1）解析（2）解析，同样按子题序号往下排\n\n某一题内容较长时在当前序号这一行里换行，下一题的序号仍和上一题序号左对齐。填空子题的答案在同一行显示，不同答案之间用分号间隔',
+          ],
+        },
+        {
+          title: '无数据的时候',
+          items: [
+            '题干没有内容的时候：无论答案解析区域是否有内容，预览页面里，整个典型例题模块直接显示暂无\n\n题干有内容，答案或解析没有内容：题干内容正常显示，答案解析区域正常显示，没有内容的区域显示【暂无】',
+          ],
+        },
+      ],
+      acceptance: [
+        '点预览后看到的是考点清单。',
+        '材料题大题前有【材料题】；多选题子题显示为（1）（多选题）题干；判断、填空、问答子题只有序号。',
+        '多选题子题的选项与（多选题）左边对齐，不与序号对齐。',
+      ],
+      source: {
+        decisionFile: DECISION,
+        decisionObject: '预览里的典型例题',
+        relatedFiles: [
+          'src/components/shared/KnowledgeCardTabletPreview.tsx',
+          'src/components/shared/KnowledgeCardPanel.tsx',
+        ],
+      },
+    },
+    {
+      id: 'KT_KC_EX-006',
+      title: '系统候选题的显示',
+      sourceType: 'decision',
+      objectType: 'dialog',
+      objectName: '典型例题选题',
+      module: MODULE,
+      pageName: PAGE,
+      route: ROUTE,
+      anchorId: 'knowledge-tree.knowledge-card.picker-question',
+      anchorStatus: 'implemented',
+      batchId: BATCH,
+      activate: [
+        { type: 'navigate', label: '进入知识体系-通用知识树', to: '/knowledge-system' },
+        { type: 'setTab', label: '切到学习资源', tab: 'resource' },
+        { type: 'setTab', label: '切到考点', tab: 'exam' },
+        { type: 'openDialog', label: '打开选题弹窗', dialog: 'leke-question-picker' },
+        {
+          type: 'scrollTo',
+          label: '定位选题列表',
+          anchorId: 'knowledge-tree.knowledge-card.picker-question',
+        },
+      ],
+      logicSections: [
+        {
+          title: '习题显示',
+          items: [
+            '在原来的选题列表上，每道题增加显示题型和难易度。',
+            '题型和难易度在题干上方，折叠时就能看到。展开后仍显示答案和解析。',
+            '显示含子题的题型的时候，在难易度的后面，再显示有几道子题\n\n子题在显示的时候，按照子题题干、答案、解析的格式进行显示，子题的题型也都显示出来，只不过是在预览的时候，只有在是多选题的时候，才单独显示题型，其他子题题型，都不单独显示题型',
+          ],
+        },
+        {
+          title: '筛选',
+          items: [
+            '搜索框旁增加题型筛选，默认选中全部题型，用户可筛选题型\n\n筛选题型时，下拉的题型支持当前学科（英语、语文学科除外）在资源库的所有题型\n\n英语学科不支持听力题、口语题\n\n语文学科不支持口语题\n\n如果用户选择的题型，在题库里是没有答案的，则，在我们配置后台显示的时候，也不显示答案区域，例如手写题',
+            '题型筛选和题干搜索一起生效。关闭弹窗后，筛选回到全部题型。',
+          ],
+        },
+      ],
+      acceptance: [
+        '打开系统选择后，每道题都能看到题型和难易度。',
+        '用题型筛选后，列表只留下对应题型。',
+      ],
+      source: {
+        decisionFile: DECISION,
+        decisionObject: '选题列表题型、难易度与筛选',
+        relatedFiles: ['src/components/shared/LekeQuestionPicker.tsx'],
+      },
+    },
+    {
+      id: 'KT_KC_EX-003',
+      title: '习题ID传递至下游',
+      sourceType: 'decision',
+      objectType: 'data',
+      objectName: '典型例题',
+      module: MODULE,
+      pageName: PAGE,
+      route: ROUTE,
+      anchorId: 'knowledge-tree.knowledge-card.example',
+      anchorStatus: 'implemented',
+      batchId: BATCH,
+      activate: [
+        { type: 'navigate', label: '进入知识体系-通用知识树', to: '/knowledge-system' },
+        { type: 'setTab', label: '切到学习资源', tab: 'resource' },
+        { type: 'setTab', label: '切到考点', tab: 'exam' },
+        {
+          type: 'scrollTo',
+          label: '定位典型例题',
+          anchorId: 'knowledge-tree.knowledge-card.example',
+        },
+      ],
+      logicSections: [
+        {
+          title: '下游同步时机',
+          items: [
+            '用户点击保存的时候，用户维护的例题ID不传递给下游\n\n当用户点击保存，并且当前版本的内容被发布后，用户本次维护的典型例题ID传递给下游\n\n当例题ID转递给下游后，例题的内容的增删改，配置后台这里同步变动，下游也同步变动，不要再在配置后台这里来操作发布操作\n\n当例题ID传递给下游后，当前例题在题库里被删除了，配置后台的例题同步被删除，下游的例题也同步被删除，配置后台不需要重新操作发布',
+          ],
+        },
+      ],
+      acceptance: [
+        '改过系统选题的内容并保存后，例题使用新的题目 ID，题库原题内容不变。',
+      ],
+      source: {
+        decisionFile: DECISION,
+        decisionObject: '例题保存为题目',
+        relatedFiles: ['src/components/shared/KnowledgeCardPanel.tsx'],
       },
     },
   ],

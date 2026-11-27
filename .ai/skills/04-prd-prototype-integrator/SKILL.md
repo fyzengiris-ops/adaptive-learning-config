@@ -1,6 +1,6 @@
 ---
 name: prd-prototype-integrator
-description: 在注册表与锚点就绪后，实现右侧 PRD 阅读面板与页面联动（activate、高亮、与角标同步）。业务详情原样展示 logicSections。运行时路径以 project-context 为准，不绑定单一技术栈。
+description: 在注册表与锚点就绪后，实现右侧 PRD 阅读面板与页面联动（activate、高亮、与角标同步）。详情原样展示 logicSections，并带上编辑、删除、标色；是否显示控件由 project-context 的开关决定。运行时路径以 project-context 为准，不绑定单一技术栈。
 ---
 
 # 右侧 PRD 面板联动 Skill
@@ -15,6 +15,7 @@ description: 在注册表与锚点就绪后，实现右侧 PRD 阅读面板与�
 - 点击需求卡片执行 `activate`，定位并高亮锚点
 - 与角标/悬浮面板尽量同步选中
 - 详情区**原样展示 `logicSections`**
+- 右侧面板和角标浮层都能编辑、删除、标色；控件是否出现，看 project-context 的「需求面板编辑」
 
 执行前必须先读：
 
@@ -22,6 +23,7 @@ description: 在注册表与锚点就绪后，实现右侧 PRD 阅读面板与�
 .ai/skills/shared/project-context.md
 .ai/skills/shared/logic-writing-spec.md
 .ai/skills/04-prd-prototype-integrator/references/layout-and-activation.md
+.ai/skills/04-prd-prototype-integrator/references/logic-panel-editing.md
 ```
 
 再按 project-context 读取 requirements 与现有 PRD 运行时文件。  
@@ -36,14 +38,16 @@ description: 在注册表与锚点就绪后，实现右侧 PRD 阅读面板与�
 
 可以：
 
-- 新增/更新 `requirement-reader-shell.js`、`requirement-panel.js`、`requirement-highlight.js`、`requirement-utils.js`、`css/prd.css`
+- 新增/更新面板、浮层、高亮与保存回写文件。静态原型常见为 `requirement-reader-shell.js`、`requirement-panel.js`、`requirement-highlight.js`、`requirement-utils.js`、`css/prd.css`；其他技术栈按 project-context 的面板路径
 - 包装布局、开关、拖拽宽度、列表、详情、`activate`
+- 按 `references/logic-panel-editing.md` 接上编辑、删除、新增、标色和回写
 
 不可以：
 
 - 负责逐个补初始角标（除非用户明确要求最小补齐）
 - 生成 Markdown PRD
-- **改写或二次组织 `logicSections`**
+- **在实现面板时改写或二次组织用户没改过的 `logicSections`**
+- 只做只读面板，把编辑、删除、标色留到以后。开关可以先关，实现必须在
 
 ## 业务逻辑详情渲染（关键）
 
@@ -62,6 +66,14 @@ description: 在注册表与锚点就绪后，实现右侧 PRD 阅读面板与�
 5. 读取旧 `display` / `operation` 作为主正文
 
 **渲染层不负责重新组织业务逻辑，只负责呈现 Skill2 已生成的分组。**
+
+编辑、删除、标色的交互、标色字符、本机保存和回写注册表，见：
+
+```txt
+.ai/skills/04-prd-prototype-integrator/references/logic-panel-editing.md
+```
+
+开关以 project-context「需求面板编辑」为准。写的是「仅查看」时藏起控件，已有标色照常显示，不删除这套实现。
 
 总规范：
 
@@ -107,6 +119,7 @@ description: 在注册表与锚点就绪后，实现右侧 PRD 阅读面板与�
 - 点击定位和高亮
 - activate 路径执行
 - logicSections 原样展示：是/否
+- 编辑、删除、标色：已接入；当前开关为打开/仅查看
 - 与角标/悬浮面板同步：支持/不支持/部分支持
 
 三、验证结果

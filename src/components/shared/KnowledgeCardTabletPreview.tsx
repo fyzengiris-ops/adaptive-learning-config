@@ -11,7 +11,6 @@ import {
   Star,
   X,
 } from 'lucide-react';
-import { MaterialChildTypeSchemeSwitch } from '@/components/shared/materialChildTypeScheme';
 import {
   examPointHasExample,
   TypicalExampleReadout,
@@ -350,7 +349,6 @@ export default function KnowledgeCardTabletPreview({
     <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4" data-req-surface="preview">
       <div className="absolute top-4 left-4 flex items-center gap-3 text-white/90 text-sm font-medium">
         <span>平板预览</span>
-        <MaterialChildTypeSchemeSwitch tone="dark" />
       </div>
       <button
         type="button"
